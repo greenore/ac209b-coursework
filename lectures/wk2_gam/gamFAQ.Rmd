@@ -1,0 +1,129 @@
+---
+title: "CS109 Lab 1 Supplement: GAM FAQs"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+---
+
+
+There are two common problems that often occur when using the `gam`
+package in R. This document shows you how to avoid them. First set up
+an example used to demonstrate the problems:
+
+```{r}
+library(gam)
+train.ind <- sample(1:nrow(cars), 25)
+cars.train <- cars[train.ind, ]
+cars.test <- cars[-train.ind, ]
+```
+
+Can't predict with new data
+===========================
+
+`predict.gam` does some complicated gymnastics behind the scenes, and
+it sometimes gets tripped up. Specifically, passing arguments as
+variable names in the `gam` formula argument results in a scoping
+error. 
+
+Here is what happens:
+
+```{r, error = TRUE}
+fit_gam <- function(spval) {
+    gam(speed ~ s(dist, spar = spval),
+        data = cars.train)
+}
+
+mp <- predict(fit_gam(spval = .2), newdata = cars.test)
+```
+
+The solution is to substitute the value of the variable you are
+passing in. You can do that using (among other things), `substitute`
+or `paste`:
+
+```{r}
+## pass spar value using substitute
+fit_gam <- function(spval) {
+    gam(as.formula(substitute(speed ~ s(dist, spar = spval), list(spval = spval))),
+        data = cars.train)
+}
+
+mp <- predict(fit_gam(spval = .2), newdata = cars.test)
+```
+
+```{r}
+## alternatvely, constuct the formula from a character vector
+fit_gam <- function(spval) {
+    gam(as.formula(paste("speed ~ s(dist, spar = ", spval, ")")),
+        data = cars.train)
+}
+
+mp <- predict(fit_gam(spval = .2), newdata = cars.test)
+```
+
+`plot.gam` doesn't work
+=======================
+
+Problems plotting `gam` package models usually occurs because of
+conflicts with the `mgcv` package. This conflict affects other things
+as well, be we'll use `plot.gam` as the example.
+
+Since many other packages use `mgcv` internally it is not always
+obvious when you've triggered the conflict.
+
+Usually `plot.gam` works just fine:
+
+```{r}
+plot(fit_gam(spval = .2))
+```
+
+Once the `mgcv` name space is loaded it breaks:
+
+```{r, results = "hide", warning = FALSE}
+library(ggplot2)
+ggplot(cars, aes(x = dist, y = speed)) +
+    geom_smooth(method = "gam") ## this loads the mgcv namespace
+```
+
+Now that the `mgcv` name space is loaded `plot.gam` (and probably
+other stuff) is broken.
+
+```{r}
+any(grepl("mgcv", loadedNamespaces()))
+```
+
+```{r, error = TRUE}
+plot(fit_gam(spval = .2))
+```
+
+The worst part is that the only way to recover is to restart your R
+session. Unloading the name space should work, but it doesn't:
+
+```{r}
+unloadNamespace("mgcv")
+any(grepl("mgcv", loadedNamespaces()))
+```
+
+```{r, error = TRUE}
+plot(fit_gam(spval = .2))
+```
+
+If you are using the `gam` package and `any(grepl("mgcv",
+loadedNamespaces()))` reports `TRUE`, you must restart your R session
+and take steps to avoid loading `mgcv`. This includes making sure
+`ggplot2` isn't loading it to make predictions with `geom_smooth`.
+
+Since you probably want to use `ggplot` to plot prediction lines from
+`gam` models you'll need a work-around to do that without loading
+`mgcv`. The safest way is just to do the predictions yourself:
+
+
+```{r, eval = FALSE, warning = FALSE}
+library(ggplot2)
+ggplot(transform(cars, pred = predict(gam(speed ~ s(dist, spar = .2), data = cars))),
+       mapping = aes(x = dist, y = speed)) +
+    geom_point() =
+    geom_line(mapping = aes(y = pred))
+```

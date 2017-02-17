@@ -1,15 +1,11 @@
 ---
-title: 'CS109 Lab 1: Model fitting'
+title: "CS109 Lab 1: Model fitting"
 output:
-  word_document:
-    toc: yes
-  pdf_document:
-    toc: yes
   html_document:
-    highlight: tango
     theme: flatly
-    toc: yes
-    toc_float: yes
+    highlight: tango
+    toc: true
+    toc_float: true
 ---
 
 R provides functions for fitting linear (`lm`) and generalized linear

@@ -1,0 +1,607 @@
+---
+title: "CS109B Lab 3: Bayes Models"
+output: 
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+---
+
+Overview 
+========
+
+There are three "levels" so to speak at which you can perform a
+Bayesian analysis in R. 
+
+1. You can perform simple analyses using distribution, math, and
+   simulation functions.
+2. You can use packages providing interfaces to pre-coded standard
+   models.
+3. You can use R as an interface to a general purpose MCMC environment.
+
+Level 1 is good for learning basic Bayesian principles and for
+relatively simple analyses. Level 2 is good for fitting Bayesian
+versions of many models you are probably familiar with in a
+frequentest context. Finally, Level 3 is good for more complex
+analyses for which the full power and flexibility of a MCMC approach
+is needed.
+
+In this lab session we'll look at Bayesian analyses at each of these
+levels. But first...
+
+Distribution functions in R
+---------------------------
+
+Bayesian data analysis requires specifying prior distributions for the
+parameters in the model, then computing and analyzing posterior
+distributions.
+
+Base *R* (specifically the `stats` package) provides
+        
+          Density, cumulative distribution function, quantile function and
+          random variate generation for many standard probability
+          distributions
+
+Refer to `?Distributions` for more information. Additional
+distribution functions are available in various R packages.
+
+You can read about the properties of various distributions, but if
+you're a visual learner like me it can be useful to graph properties
+of a distribution at varying parameter values to get an intuitive feel
+for how the distribution behaves. For example, if we are not familiar
+with the `beta` distribution:
+
+```{r}
+shapes <- round(2^(3:8)/10, digits = 2)
+x <- seq(0, 1, by = 0.01)
+
+## all combinations of x, alpha, and beta
+beta_d <- expand.grid(x = x,
+                      alpha = shapes,
+                      beta = shapes)
+
+## split the data by alpha and beta, calculate density, then re-assemble (rbind).
+beta_d <- do.call(rbind,
+                  lapply(split(beta_d, beta_d[c("alpha", "beta")]),
+                         function(data) {
+                             data.frame(data,
+                                        density = dbeta(data$x,
+                                                        unique(data$alpha),
+                                                        unique(data$beta)))
+                         }))
+
+library(ggplot2)
+
+ggplot(beta_d, aes(x = x, y = density)) +
+    geom_line() +
+    facet_grid(beta ~ alpha, labeller = label_both) +
+    scale_y_continuous(limits = c(0, 15))
+```
+
+Simple analysis of proportions
+==============================
+
+*The lady tasting tea* is a classic in the statistic literature. The
+basic premise is that a lady claims to be able to tell if milk or tea
+was added to a cup first. Variations of the basic idea have appeared
+in statistics texts ever since the original reported in R. Fisher's
+*The Design of Experiments* (1935). In most descriptions of the
+experiment the lady correctly identifies 8/8 cups of tea. What, in a
+Bayesian framework, does that tell us?
+
+We can work it out using basic distribution statistics.
+
+```{r}
+## Obseved data
+obs <- c(1, 1, 1, 1, 1, 1, 1, 1)
+obs.count <- table(factor(obs, levels = c("0", "1")))
+
+## Possible values of the unknown parameter
+x <- (0:100)/100
+
+## priors, likelihood, and posterior expressed as beta distribution parameters
+prior_alpha <- prior_beta <- 1 ## dbeta(x, 1, 1) == dunif(x)
+likelihood_alpha <- obs.count["1"] + 1
+likelihood_beta <- obs.count["0"] + 1
+posterior_alpha <- obs.count["1"] + prior_alpha
+posterior_beta <- obs.count["0"] + prior_beta
+
+p_tea1 <- data.frame(x = x, # possible values of our unobserved parameter theta
+                     prior = dbeta(x, prior_alpha, prior_beta), # uniformative prior (does this make sense?)
+                     likelihood = dbeta(x, # x^8*(1-x)^0 scaled to match prior
+                                        likelihood_alpha,
+                                        likelihood_beta),
+                     posterior = dbeta(x, # since the prior is uninformative the posterior distribution is the likelihood
+                                       posterior_alpha,
+                                       posterior_beta))
+
+library(tidyr)
+
+p_tea1 <- gather(p_tea1,
+                key = "distribution",
+                value = "density",
+                -x)
+
+library(ggplot2)
+
+ggplot(p_tea1,
+       mapping = aes(x = x, y = density, color = distribution)) +
+    geom_line()
+```
+
+Does an uninformative prior make sense?
+-----------------------------------
+
+By specifying a uniform distribution we are saying that before seeing
+the data $\theta$ has equal probability of being any value between
+zero and 1. But that doesn't seem quite right. Even if she can not
+tell the difference, the lady is likely to get some right. Perhaps
+before seeing the data we expect the median outcome to be 4/8, and
+that we are pretty confident about that. We can include this prior
+information in the analysis using a beta distribution.
+
+The LearnBayes package has a utility for choosing a beta distribution
+that matches our prior beliefs.
+
+```{r}
+##  install.packages("LearnBayes")
+library(LearnBayes)
+
+prior_shape <- beta.select(list(p = .5, x = .5), # middle of the distribution is .5
+                           list(p = .95, x = .7)) # 95th percentile is .7
+
+## this is the beta distribution with mdeian = .5 and 95th percentile = .7
+prior_shape
+```
+
+We can use that information to calculation the posterior distribution
+again, incorporating this prior information.
+
+```{r}
+prior_alpha <- prior_shape[1]
+prior_beta <- prior_shape[1]
+likelihood_alpha <- obs.count["1"] + 1
+likelihood_beta <- obs.count["0"] + 1
+posterior_alpha <- obs.count["1"] + prior_alpha
+posterior_beta <- obs.count["0"] + prior_beta
+
+p_tea2 <- data.frame(x = x,
+                     prior = dbeta(x, prior_alpha, prior_beta),
+                     likelihood = dbeta(x, # x^8*(1-x)^0 scaled to match prior
+                                        likelihood_alpha,
+                                        likelihood_beta),
+                     posterior = dbeta(x,
+                                       posterior_alpha,
+                                       posterior_beta))
+
+p_tea2 <- gather(p_tea2,
+                 key = "distribution",
+                 value = "density",
+                 -x)
+
+ggplot(p_tea2,
+       mapping = aes(x = x, y = density, color = distribution)) +
+    geom_line() +
+    scale_x_continuous(breaks = seq(0.0, 1.0, by = 0.1))
+```
+
+Analyzing the posterior distribution
+------------------------------------
+
+Once the posterior distribution has been obtained it can be analyzed to
+obtain expected parameter values and other summary statistics. For the
+beta distribution we can calculate these values analytically:
+
+```{r}
+theta_summary1 <- c(mode = (posterior_alpha - 1/3) /
+                           (posterior_alpha + posterior_beta - 1),
+                    median = (posterior_alpha - 1/3) /
+                             (posterior_alpha + posterior_beta - (2/3)))
+
+theta_summary1
+```
+
+ A useful and general alternative is to simulate a sample from the
+ distribution and analyze the simulated values:
+
+```{r}
+theta <- rbeta(1000000,
+               posterior_alpha,
+               posterior_beta)
+
+Mode <- function(x) {
+    dx <- density(x)
+    dx$x[which.max(dx$y)]
+}
+
+theta_summary2 <- c(mode = Mode(theta),
+                    median = median(theta),
+                    lq = quantile(theta, .025),
+                    uq = quantile(theta, 0.975),
+                    mean = mean(theta),
+                    var = var(theta))
+theta_summary2
+ ```
+
+Your Turn: Probability of a Purchase
+===================================
+
+Suppose that you run a website selling cat pajamas. You would like to
+calculate the probability that your star salesperson closes a sale.
+Over the course of a day you have 50 visitors, 5 of whom make a
+purchase.
+
+1. Choose and define an uninformative prior distribution for the
+   parameter in your model.
+
+2. Construct a likelihood function based on the observed 5/50
+   successes.
+   
+3. Calculate the posterior distribution of the parameter.
+
+4. Calculate the expected value of the parameter.
+
+5. (Advanced) Plot the likelihood function and the prior and posterior
+   distributions to see visually how we updated our beliefs about the
+   probability based on the data.
+
+6. (Advanced) Fit a logistic regression predicting sales (this is an
+   intercept-only model) and compare the results to those obtained
+   from the Bayesian analysis.
+
+
+Classification example
+======================
+
+A classic classification example is the spam filter. I've made up some
+data based on
+<https://archive.ics.uci.edu/ml/machine-learning-databases/spambase/>
+that we can use to illustrate.
+
+```{r}
+spam <- read.csv("http://tutorials.iq.harvard.edu/example_data/spam.csv")
+str(spam)
+```
+
+Next write a function to calculate the probability of being in the
+first class. (This function definition was copied from homework 3.)
+
+```{r}
+posterior_pA = function(alpha, yA = NULL, yB = NULL, y_til = NULL){
+    ## number of features
+    K = length(yA)
+    ## total word counts
+    n = sum(y_til)
+    nA = sum(yA)
+    nB = sum(yB)
+    ## posterior predictive distribution of being class A
+    A1 = lfactorial(n) + lfactorial(nA) - lfactorial(n + nA)
+    A2 = sum(lfactorial(y_til + yA)) - sum(lfactorial(y_til)) - sum(lfactorial(yA))
+    A3 = lfactorial(n + nA) + lgamma(K*alpha) - lgamma(n + nA + K*alpha)
+    A4 = sum(lgamma(y_til + yA + alpha) - lfactorial(y_til + yA) - lgamma(alpha))
+    A5 = lfactorial(nB) + lgamma(K*alpha) - lgamma(nB + K*alpha)
+    A6 = sum(lgamma(yB + alpha) - lfactorial(yB) - lgamma(alpha))
+    R_A = exp(A1 + A2 + A3 + A4 + A5 + A6)
+    ## posterior predictive distribution of being class B
+    B1 = lfactorial(n) + lfactorial(nB) - lfactorial(n + nB)
+    B2 = sum(lfactorial(y_til + yB)) - sum(lfactorial(y_til)) - sum(lfactorial(yB))
+    B3 = lfactorial(n + nB) + lgamma(K*alpha) - lgamma(n + nB + K*alpha)
+    B4 = sum(lgamma(y_til + yB + alpha) - lfactorial(y_til + yB) - lgamma(alpha))
+    B5 = lfactorial(nA) + lgamma(K*alpha) - lgamma(nA + K*alpha)
+    B6 = sum(lgamma(yA + alpha) - lfactorial(yA) - lgamma(alpha))
+    R_B = exp(B1 + B2 + B3 + B4 + B5 + B6)
+    ## probability of being class A
+    pA = R_A/(R_A + R_B)
+    return(pA)
+}
+```
+
+`posterior_pA` above generates probabilities for a single case. It
+will be more useful if we wrap it so you can calculate probabilities
+for a data.frame of cases.
+
+```{r}
+## posterior_pA above generates probabilities for a single case.
+## here we wrap it so you can calculate probabilities for a data.frame of cases.
+class_probability = function(data, class, alpha) {
+    y <- lapply(split(data, class),
+                function(x) {
+                    apply(x, 2, sum)
+                })
+    yA <- y[[1]]
+    yB <- y[[2]]
+    pA <- apply(data, 1, function(x) {
+        posterior_pA(alpha = alpha,
+                     yA = yA,
+                     yB = yB,
+                     y_til = x)
+    })
+    pA
+}
+
+```
+
+Finally we can calculate the probability that each message is spam.
+
+```{r}
+pa1 <- class_probability(spam[-1], spam[1], alpha = 1)
+
+## confusion matrix, as proportions.
+confmat <- function(actual, predicted) {
+    prop.table(table(actual, predicted),
+               margin = 2)
+}
+
+confmat(spam$spam,
+        factor(pa1 < .5,
+               labels = c("email", "spam")))
+```
+
+As a quick point of comparison, here is the accuracy of a naive Bayes
+classifier.
+
+
+```{r}
+## install.packages("e1071")
+library(e1071)
+
+confmat(spam$spam,
+        predict(naiveBayes(spam ~ ., data = spam), newdata = spam))
+
+```
+
+Your Turn: Predict Party from Voting Pattern
+============================================
+
+In this example you will predict party membership from voting
+patterns. The data is available at 
+
+<https://archive.ics.uci.edu/ml/machine-learning-databases/voting-records/house-votes-84.data>
+
+and the documentation is at
+
+<https://archive.ics.uci.edu/ml/machine-learning-databases/voting-records/house-votes-84.names>
+
+1. Read the data into R and inspect them.
+
+2. Convert `y` and `n` values to `1` and `0`.
+
+3. Remove missing values. (Not a good idea in general!)
+
+4. Use the `posterior_pA` function provided above to predict party
+   membership from voting patterns.
+   
+5. Generate a confusion matrix to check the accuracy of your
+   prediction.
+
+6. (Advanced) Split the data into a train and test set. Predict party
+   in the test based on voting patterns in the train.
+
+
+Specific Bayes Models using MCMC
+================================
+
+For more complex models we will usually turn to MCMC as a means of
+sampling from the posterior distribution. There are several packages
+that provide Bayesian versions of common statistical models using
+MCMC, including the `MCMCpack` and `rstanarm` packages.
+
+Fitting MCMC models in R
+------------------------
+
+Let's look again at the problem of classifying messages as spam vs
+email, this time using a Bayesian version of logistic regression.
+
+
+```{r}
+## install.packages("MCMCpack")
+## install.packages(c("rstan", "rstanarm"))
+
+library(rstanarm) # based on the stan probabilistic programming language
+library(MCMCpack) # based on the scythe statistical library
+
+# these approaches (esecially stan) reguire a lot of computation. Use multiple cores if you have them.
+options(mc.cores = parallel::detectCores() - 1)
+```
+
+Let's first set up a training a test set of messages
+```{r}
+spam <- read.csv("http://tutorials.iq.harvard.edu/example_data/spam.csv")
+
+intrain <- sample(1:nrow(spam), 300)
+train <- spam[intrain, ]
+test <- spam[-intrain, ]
+
+```
+
+Next we'll compare the accuracy of:
+
+-   Logistic regression (`glm`)
+-   Bayesian logistic regression (`stan_glm`)
+-   Bayesian logistic regression ('MCMClogit`)
+
+
+```{r}
+fit0 <- glm(spam ~ ., data = train,
+            family = binomial(link = "logit"))
+
+confmat(test$spam,
+        factor(predict(fit0,
+                       newdata = test,
+                       type = "response") > .5,
+               labels = c("p_email", "p_spam")))
+
+prop.table(table(factor(predict(fit0,
+                                newdata = test,
+                                type = "response") > .5,
+                        labels = c("p_email", "p_spam")),
+                 test$spam), margin = 1)
+```
+
+```{r}
+fit1 <- stan_glm(spam ~ ., data = test, 
+                 family = binomial(link = "logit"))
+
+## we need to do a little work to get predictions.
+pd1 <- posterior_predict(fit1,
+                        newdata = test,
+                        draws = 2000)
+
+pd1 <- apply(pd1, 2, mean)
+
+confmat(test$spam,
+        factor(pd1 > .5,
+               labels = c("email", "spam")))
+```
+
+```{r}
+fit2 <- MCMClogit(spam ~ ., data = transform(train, spam = as.integer(factor(spam)) - 1))
+
+## We need to do a littl more work to get predictions. This code adapted from
+## http://stackoverflow.com/questions/11839886/r-predict-glm-equivalent-for-mcmcpackmcmclogit#40275910
+predict_mcmc_logit <- function(model, newdata) {
+    1 / (1 + exp(-model %*% do.call(rbind, c(1,newdata))))
+}
+
+pd2 <- predict_mcmc_logit(fit2, newdata = test[-1])
+
+p2 <- apply(pd2, 2, mean)
+
+confmat(test$spam,
+        factor(p2 > .5,
+               labels = c("email", "spam")))
+```
+
+Both the `rstanarm` and `MCMCpack` model fitting functions have options to change the number of burn-in iterations, the number of MCMC iterations and so forth. Refer to the package documentation for details.
+
+Examining the simulations
+-------------------------
+
+It is a good idea to examine the `trace` and other diagnostic
+information. For `MCMCpack` models the `plot` function will give you
+basic diagnostics. For `rstanarm` (and other `rstan` models) the
+`launch_shinystan` function launches an interactive dashboard that you
+can use to display information about the model.
+
+
+```{r}
+## not run; only makes sense in interactive environment
+## launch_shinystan(fit1)
+
+plot(fit1)
+```
+
+
+```{r}
+## not run; only makes sense in interactive environment
+## launch_shinystan(fit1)
+plot(fit2)
+```
+
+Your Turn: Predict Party Using Bayesian Logistic Regression
+===========================================================
+
+
+1. Fit a logistic regression model predicting political party from
+   votes and generate a confusion matrix to assess the accuracy of the
+   model.
+
+2. Fit a Bayesian logistic regression model predicting political party from
+   votes and generate a confusion matrix to assess the accuracy of the
+   model. You may use either the `MCMCpack` package or the `rstanarm` package.
+
+3. (Advance) Try to find a way of improving upon the classification
+   accuracy obtained in 1 and 2 above.
+
+
+General MCMC Programming Environments
+=====================================
+
+Finally we've reached level three. Here we specify models in terms of
+likelihood functions and priors and let our chosen MCMC algorithm
+search the parameter space. 
+
+There are two main options for doing this in R: `R2OpenBUGS` and
+`rstan`. I'm going to demonstrate `rstan` since I think it is where
+the current momentum and developer interest currently is.
+
+
+```{r}
+library(rstan)
+
+## specify model as a charactor vector
+model <- '
+data {
+  int<lower=0>  N;
+  vector[N] spam;
+  vector[N] A1;
+  vector[N] A2;
+  vector[N] A3;
+  vector[N] A4;
+  vector[N] A5;
+  vector[N] A6;
+  vector[N] A7;
+  vector[N] A8;
+  vector[N] A9;
+  vector[N] A10;
+  vector[N] A11;
+  vector[N] A12;
+  vector[N] A13;
+  vector[N] A14;
+  vector[N] A15;
+  vector[N] A16;
+  vector[N] A17;
+  vector[N] A18;
+  vector[N] A19;
+  vector[N] A20;
+  vector[N] A21;
+}
+parameters {
+  vector[22] beta;
+  real<lower=0> sigma;
+} 
+model {
+  spam ~ normal(beta[1] + beta[2] * A1 + beta[3] * A2 + beta[4] * A3
+                    + beta[5] * A4 + beta[6] * A5 + beta[7] * A6 
+                    + beta[8] * A7 + beta[9] * A8 
+                    + beta[10] * A9 + beta[11] * A10
+                    + beta[12] * A11 + beta[13] * A12
+                    + beta[14] * A13 + beta[15] * A14
+                    + beta[16] * A15 + beta[17] * A16
+                    + beta[18] * A17 + beta[19] * A18
+                    + beta[20] * A19 + beta[21] * A20
+                    + beta[22] * A21,sigma);
+}
+'
+
+## write model specification to file
+cat(model, file = "spamModel.stan")
+
+
+## prepair data (stan is picky...)
+train$spam <- as.integer(train$spam) - 1
+## stan doesn't like dots in variable names
+names(train) <- gsub("\\.", "", names(train))
+train.stan <- c(list(N = nrow(train)), as.list(train))
+
+## fit the model
+fit1b <- stan(file = "spamModel.stan",
+              data = train.stan)
+
+
+print(fit1)
+```
+
+```{r}
+
+## plot the trace
+traceplot(fit1b)
+
+## plot parameters
+plot(fit1b)
+```
+
+More information about Stan can be found at <http://mc-stan.org>.
+
