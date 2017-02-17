@@ -1,25 +1,32 @@
 ---
 title: |
-  | Homework 2: Bayesian Methods
-author: Tim Hagmann
+  | Homework 3: Bayesian Methods
+author: "Tim Hagmann"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output:
+  pdf_document:
+    toc: yes
   html_document:
     css: css/styles.css
     highlight: tango
     theme: flatly
     toc: yes
     toc_float: yes
-  html_notebook:
-    theme: flatly
-    toc: yes
-    toc_float: yes
-  pdf_document:
-    toc: yes
   word_document:
     toc: yes
 subtitle: Harvard CS 109B, Spring 2017
 ---
+
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE,
+                      tidy.opts=list(width.cutoff=60), fig.pos='H',
+                      fig.align='center')
+```
 
 # Problem 1: Authorship Attribution
 
