@@ -1,4 +1,4 @@
-# CS 109B - Advanced Topics in Data Science II
+# AC 209B - Advanced Topics in Data Science II
 Professional Graduate Data Science Coursework - Spring semester 2017
 
 ## Description: 
@@ -11,7 +11,6 @@ DIRECTORY           | DESCRIPTION
 --------------------|----------------------
 `.`                 | Files such as README and gitignore
 `./hw/`             | The homework project files
-`./labs/`           | Material from the labs
 `./labs/`           | Material from the labs
 `./lectures/`       | Material from the lectures
 `./videos/`         | Videos from the lectures and labs
