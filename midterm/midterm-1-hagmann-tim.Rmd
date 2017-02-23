@@ -58,8 +58,8 @@ source("scripts/03_functions.R")              # Load project specific functions
 ### Load the data
 ```{r, message=FALSE}
 ## Read data
-df_train <- data.frame(read_csv("data/dataset_1_train.txt"))
-df_test <- data.frame(read_csv("data/dataset_1_test.txt"))
+df_train <- read.csv("data/dataset_1_train.txt", stringsAsFactors=TRUE)
+df_test <- read.csv("data/dataset_1_test.txt", stringsAsFactors=TRUE)
 ```
 
 ### Preprocess data
@@ -146,10 +146,14 @@ ggplot(df_state, aes(x=state, y=perc)) +
 
 There appears to be difference on a in-between state level concerning the percentage of good and bad reviews. On average reviewers give in `r sprintf("%.1f", mean_review)`  % of the cases a good review. The above plot shows, that illinois, Arizona and Ohio have an above average of good reviews while the other states a below the overall average. Illinios has the highest amount of good reviews while South Carolina has the highest amount of bad reviews. However, it has to be noted, that there were only 8 reviews in Illinios and 4 in South Carolina, which puts those statments on a shaky foundation. The other states on the other hand have many more reviews and there is also difference vizible with Arizona leading with more thant 60% good reviews and Pensilvenia having the worst reviews with only around 45% good reviews. 
 
+```{r, include=FALSE}
+# Cleanup
+rm(i, p, df_state, states, mean_review)
+```
+
 # Problem 2 [35 points]
 
 This problem is concerned with predicting a restaurant's rating based on text features. We'll consider the Multinomial-Dirichlet Bayesian model to describe the distribution of text features and finally to predict the binary ratings.
-
 
 **Probability model:** Let $(y^g_1, y^g_2, \ldots, y^g_{100})$ denote the total counts of the $100$ dictionary words across the reviews for "good" restaurants, and $(y^b_1, y^b_2, \ldots, y^b_{100})$ denote the total counts of the $100$ dictionary words across the reviews for "bad" restaurants. We assume the following *multinomial* likelihood model:
 \[
@@ -167,7 +171,6 @@ p(\theta^b_1, \ldots, \theta^b_{100})  \,\propto\, (\theta^b_1)^{\alpha}\ldots(\
 \]
 Hence we can interpret, for example, $\theta^g_5$ as the probability the word "perfect" is observed once in a review of "good" restaurants. For the purposes of this problem, set $\alpha=2$.
 
-
 <!-- (a) Write down a Dirichlet prior density function (as described in class) with the parameter $\alpha=2$ for all 100 words.
 (b) Explain briefly why the frequencies of each of the 100 words for each restaurant arguably can be modeled as a multinomial distribution.
  -->
@@ -178,13 +181,132 @@ Hence we can interpret, for example, $\theta^g_5$ as the probability the word "p
 # Problem 3 [45 points]
 This problem is concerned with modeling a restaurant's rating on factors other than word occurrences.
 
-(a) Construct a model for the probability a restaurant is rated "good" as a function of latitude and longitude, average word count, and business attributes.  Include quantitative predictor variables as smoothed terms as you see appropriate. You may use default tuning parameter. Summarize the results of the model.  Does evidence exist that the smoothed terms are significantly non-linear?  Produce visual displays to support your conclusions. [20 points]
-(b) For your model in part (a), summarize the predictive ability by computing a misclassification rate. [10 points]
-(c) Consider a version of model (a) that does not include the `cuisine` predictor variable.  Explain briefly how you would test in your model whether `cuisine` is an important predictor of the probability of a good restaurant rating.  Perform the test, and explain your conclusions. [15 points]
+## (a) Model based on business attributes
+Construct a model for the probability a restaurant is rated "good" as a function of latitude and longitude, average word count, and business attributes.  Include quantitative predictor variables as smoothed terms as you see appropriate. You may use default tuning parameter. Summarize the results of the model.  Does evidence exist that the smoothed terms are significantly non-linear?  Produce visual displays to support your conclusions. [20 points]
 
 
-
-```{r, echo = FALSE, fig.height = 7, fig.width = 9}
-
-
+### Preprocess data
+```{r}
+# Define business attributes from 'data/dataset_1_description.txt'
+business_attributes <- c("rating","latitude", "longitude", "cuisine",
+                         "WheelchairAccessible", "WiFi", "BusinessAcceptsCreditCards",
+                         "Alcohol", "NoiseLevel", "RestaurantsPriceRange2",
+                         "RestaurantsAttire", "Smoking", "RestaurantsReservations",
+                         "OutdoorSeating", "GoodForKids", "avg_word_count")
+# Create new dataframes
+df_train3 <- df_train[, business_attributes]
+df_test3 <- df_test[, business_attributes]
 ```
+
+
+### Fit different models
+```{r}
+# GAM with only the intercept
+fit_gam_intercept <- gam(rating ~ 1, family=binomial(link="logit"),
+                         data=df_train3)
+
+# GAM with all variables
+fit_gam_lin <- gam(rating ~ ., family=binomial(link="logit"),
+                   data=df_train3)
+
+# GAM with splines
+fit_gam_spl <- gam(rating ~ s(latitude) + s(longitude) + cuisine +
+                     WheelchairAccessible + WiFi + BusinessAcceptsCreditCards +
+                     Alcohol + NoiseLevel + s(RestaurantsPriceRange2) + 
+                     RestaurantsAttire + Smoking + RestaurantsReservations +
+                     OutdoorSeating + GoodForKids + s(avg_word_count),
+                   family=binomial(link="logit"),
+                   data=df_train3)
+
+df_train4 <- df_train3
+df_test4 <- df_test3
+# df_train4$RestaurantsPriceRange2 <- factor(df_train4$RestaurantsPriceRange2)
+# df_test4$RestaurantsPriceRange2 <- factor(df_test4$RestaurantsPriceRange2)
+
+
+# df_train4$coord <- scale(df_train4$longitude) + scale(df_train4$latitude)
+# df_test4$coord <- scale(df_test4$longitude) + scale(df_test4$latitude)
+
+# df_train4$longitude <- scale(df_train4$longitude)
+# df_test4$longitude <- scale(df_test4$longitude)
+
+# df_train4$latitude <- scale(df_train4$latitude)
+# df_test4$latitude <- scale(df_test4$latitude)
+
+
+fit_gam_spl2 <- gam(rating ~ s(latitude) + s(longitude) + cuisine +
+                     WheelchairAccessible + WiFi + BusinessAcceptsCreditCards +
+                     Alcohol + NoiseLevel + RestaurantsPriceRange2 + 
+                     RestaurantsAttire + Smoking + RestaurantsReservations +
+                     OutdoorSeating + GoodForKids + s(avg_word_count),
+                   family=binomial(link="logit"),
+                   data=df_train4)
+
+
+fit_gam_spl2 <- gam(rating ~ s(latitude) + cuisine +
+                     WheelchairAccessible + WiFi + BusinessAcceptsCreditCards +
+                     Alcohol + NoiseLevel + RestaurantsPriceRange2 + 
+                     RestaurantsAttire + Smoking + RestaurantsReservations +
+                     OutdoorSeating + GoodForKids + s(avg_word_count),
+                   family=binomial(link="logit"),
+                   data=df_train4)
+
+p1 <- preplot(fit_gam_spl2, terms="s(latitude)")[[1]]
+df1 <- data.frame(x=p1$x, y=p1$y, se=p1$se.y)
+g1 <- ggplot(df1, aes(x=x, y=y)) +
+  geom_line(size=0.9) +
+  geom_ribbon(aes(ymin=df1$y - df1$se, ymax=df1$y + df1$se),
+              alpha=0.2, fill="black") +
+  scale_y_continuous(limits = c(min(df1$y*4), max(df1$y*4))) +
+  labs(title="Plot VIII: latitude") +
+  ylab(label=p1$ylab) +
+  xlab(label=p1$xlab) +
+  theme_bw()
+
+
+p2 <- preplot(fit_gam_spl2, terms="s(avg_word_count)")[[1]]
+df2 <- data.frame(x=p2$x, y=p2$y, se=p2$se.y)
+g2 <- ggplot(df2, aes(x=x, y=y)) +
+  geom_line(size=0.9) +
+  geom_ribbon(aes(ymin=df2$y - df2$se, ymax=df2$y + df2$se),
+              alpha=0.2, fill="black") +
+  scale_y_continuous(limits = c(min(df2$y*4), max(df2$y*4))) +
+  labs(title="Plot IX: Average word count") +
+  ylab(label=p2$ylab) +
+  xlab(label=p2$xlab) +
+  theme_bw()
+grid.arrange(g1, g2, nrow=1, ncol=2)
+```
+
+
+```{r}
+# Prediction
+pred_gam_intercept <- predict(fit_gam_intercept, newdata=df_test3, type="response")
+pred_gam_lin <- predict(fit_gam_lin, newdata=df_test3, type="response")
+pred_gam_spl <- predict(fit_gam_spl, newdata=df_test3, type="response")
+pred_gam_spl2 <- predict(fit_gam_spl2, newdata=df_test4, type="response")
+
+# Confusion matrix
+cm_gam_intercept <- table(Actual=df_test3$rating, Predicted=pred_gam_intercept > 0.5)
+cm_gam_lin <- table(Actual=df_test3$rating, Predicted=pred_gam_lin > 0.5)
+cm_gam_spl <- table(Actual=df_test3$rating, Predicted=pred_gam_spl > 0.5)
+cm_gam_spl2 <- table(Actual=df_test4$rating, Predicted=pred_gam_spl2 > 0.5)
+
+# Accuracy
+acc_gam_intercept <- sum(diag(cm_gam_intercept)) / sum(cm_gam_intercept)
+acc_gam_lin <- sum(diag(cm_gam_lin)) / sum(cm_gam_lin)
+acc_gam_spl <- sum(diag(cm_gam_spl)) / sum(cm_gam_spl)
+acc_gam_spl2 <- sum(diag(cm_gam_spl2)) / sum(cm_gam_spl2)
+
+print(c(acc_gam_intercept, acc_gam_lin, acc_gam_spl, acc_gam_spl2))
+```
+
+
+(b) For your model in part (a), summarize the predictive ability by computing a misclassification rate. [10 points]
+
+
+
+
+
+
+(c) Consider a version of model (a) that does not include the `cuisine` predictor variable.  Explain briefly how you would test in your model whether `cuisine` is an important predictor of the probability of a good restaurant rating.  Perform the test, and explain your conclusions. [15 points]
