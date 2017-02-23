@@ -146,7 +146,7 @@ The LearnBayes package has a utility for choosing a beta distribution
 that matches our prior beliefs.
 
 ```{r}
-##  install.packages("LearnBayes")
+## install.packages("LearnBayes")
 library(LearnBayes)
 
 prior_shape <- beta.select(list(p = .5, x = .5), # middle of the distribution is .5
@@ -223,7 +223,7 @@ theta_summary2 <- c(mode = Mode(theta),
                     mean = mean(theta),
                     var = var(theta))
 theta_summary2
- ```
+```
 
 Your Turn: Probability of a Purchase
 ===================================
@@ -261,7 +261,10 @@ data based on
 that we can use to illustrate.
 
 ```{r}
-spam <- read.csv("http://tutorials.iq.harvard.edu/example_data/spam.csv")
+library(tidyverse)
+# spam <- read.csv("http://tutorials.iq.harvard.edu/example_data/spam.csv")
+# write_csv(spam, path="data/lab3_spam.csv")
+spam <- data.frame(read_csv("data/lab3_spam.csv"))
 str(spam)
 ```
 
@@ -346,9 +349,10 @@ classifier.
 ```{r}
 ## install.packages("e1071")
 library(e1071)
-
-confmat(spam$spam,
-        predict(naiveBayes(spam ~ ., data = spam), newdata = spam))
+spam$spam <- factor(spam$spam)
+fit_nb <- naiveBayes(spam ~ ., data=spam)
+prd_nb <- predict(fit_nb, newdata=spam, type="class")
+confmat(spam$spam, prd_nb)
 
 ```
 
@@ -368,13 +372,38 @@ and the documentation is at
 
 2. Convert `y` and `n` values to `1` and `0`.
 
+```{r}
+# Read data into R
+# vote <- read.csv("https://archive.ics.uci.edu/ml/machine-learning-databases/voting-records/house-votes-84.data", header=FALSE, na.string="?")
+# write_csv(vote, path="data/lab3_vote.csv")
+spam <- read_csv("data/lab3_vote.csv")
+
+# Convert everything to numbers
+vote[-1] <- lapply(vote[-1], as.numeric)
+```
+
 3. Remove missing values. (Not a good idea in general!)
+
+```{r}
+vote <- na.omit(vote)
+
+```
 
 4. Use the `posterior_pA` function provided above to predict party
    membership from voting patterns.
-   
+
+```{r}
+pa <- class_probability(data=vote[-1], vote[[1]], alpha=1)
+```
+
+
 5. Generate a confusion matrix to check the accuracy of your
-   prediction.
+prediction.
+
+```{r}
+confmat(as.numeric(factor(vote[1])), pa > .5)
+```
+
 
 6. (Advanced) Split the data into a train and test set. Predict party
    in the test based on voting patterns in the train.
