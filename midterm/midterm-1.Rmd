@@ -1,0 +1,92 @@
+---
+title: "CS 109B: Midterm Exam 1"
+subtitle: "Feb 23, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+The set of questions below address the task of predicting the merit of a restaurant on Yelp. Each restaurant is described by a set of business attributes, and is accompanied by a set of text reviews from customers. For the purpose of the problems below, the average rating (originally on a scale from 0 to 5) was converted into a binary variable depending on whether the average was above 3.5, in which case it is considered "good" (labeled 1), or below 3.5 in which case it is considered "bad" (labeled 0). The overall goal is to predict these binary ratings from the information provided.
+
+The data are split into a training and test set and are in the files `dataset_1_train.txt` and `dataset_1_test.txt` respectively. The first column contains the rating for the restaurant (0 or 1), columns 2-21 contain the business attributes, and columns 22-121 contain text features extracted from the customer reviews for the restaurant. The details about the business attributes are provided in the file `dataset_1_description.txt`. 
+
+We use the bag-of-words encoding to generate the text features, where the set of reviews for a restaurant are represented by a vector of word counts. More specifically, we construct a dictionary of 100 frequent words in the customer reviews, and include 100 text features for each restaurant: the $i$-th feature contains the number of times the dictionary word $i$ occurs in customer reviews for the restaurant. For example, a text feature 'fantastic' with value 18 for a restaurant indicates that the word 'fantastic' was used a total of 18 times in customer reviews for that restaurant.
+
+# Problem 1 [20 points]
+
+Does the location of a restaurant relate to its rating?  Construct a compelling visualization to address this question, and write a brief (under 300 words) summary that clearly explains your analysis and conclusions to someone without a data science background.
+
+# Problem 2 [35 points]
+
+This problem is concerned with predicting a restaurant's rating based on text features. We'll consider the Multinomial-Dirichlet Bayesian model to describe the distribution of text features and finally to predict the binary ratings.
+
+
+**Probability model:** Let $(y^g_1, y^g_2, \ldots, y^g_{100})$ denote the total counts of the $100$ dictionary words across the reviews for "good" restaurants, and $(y^b_1, y^b_2, \ldots, y^b_{100})$ denote the total counts of the $100$ dictionary words across the reviews for "bad" restaurants. We assume the following *multinomial* likelihood model:
+\[
+p(y^g_1, y^g_2, \ldots, y^g_{100}\,|\,\theta^g_1, \ldots, \theta^g_{100}) \,\propto\, (\theta^g_1)^{y^g_1}(\theta^g_2)^{y^g_2}\ldots(\theta^g_{100})^{y^g_{100}}
+\]
+\[
+p(y^b_1, y^b_2, \ldots, y^b_{100}\,|\,\theta^b_1, \ldots, \theta^b_{100}) \,\propto\, (\theta^b_1)^{y^b_1}(\theta^b_2)^{y^b_2}\ldots(\theta^b_{100})^{y^b_{100}}.
+\]
+The model parameters $(\theta^g_1, \ldots, \theta^g_{100})$ and $(\theta^b_1, \ldots, \theta^b_{100})$ are assumed to follow a *Dirichlet* prior distribution with parameter $\alpha$. That is
+\[
+p(\theta^g_1, \ldots, \theta^g_{100})  \,\propto\, (\theta^g_1)^{\alpha}\ldots(\theta^g_{100})^{\alpha}
+\]
+\[
+p(\theta^b_1, \ldots, \theta^b_{100})  \,\propto\, (\theta^b_1)^{\alpha}\ldots(\theta^b_{100})^{\alpha}.
+\]
+Hence we can interpret, for example, $\theta^g_5$ as the probability the word "perfect" is observed once in a review of "good" restaurants. For the purposes of this problem, set $\alpha=2$.
+
+
+<!-- (a) Write down a Dirichlet prior density function (as described in class) with the parameter $\alpha=2$ for all 100 words.
+(b) Explain briefly why the frequencies of each of the 100 words for each restaurant arguably can be modeled as a multinomial distribution.
+ -->
+(a) Describe briefly in words why the posterior distribution formed from a Dirichlet prior distribution and a multinomial likelihood is a Dirichlet posterior distribution?  What are the parameters for the Dirichlet posterior distribution? [5 points]
+(b) From a Monte Carlo simulation of the Dirichlet posterior distribution for "good" restaurants, what is the posterior mean probability that the word "chocolate" is used?  From a Monte Carlo simulation of the Dirichlet posterior distribution for bad restaurants, what is the posterior mean probability that the word "chocolate" is used? **Hint**: use the `rdirichlet` function in the `MCMCpack` library. [15 points]
+(c) For the restaurants in the test data set, estimate the probability based on the results of the Dirichlet-Multinomial model that each is good versus bad. You may want to apply the function `posterior_pA` provided below (in `midterm-1.Rmd`).  Create a visual summary relating the estimated probabilities and the actual binary ratings in the test data. [15 points]
+
+# Problem 3 [45 points]
+This problem is concerned with modeling a restaurant's rating on factors other than word occurrences.
+
+(a) Construct a model for the probability a restaurant is rated "good" as a function of latitude and longitude, average word count, and business attributes.  Include quantitative predictor variables as smoothed terms as you see appropriate. You may use default tuning parameter. Summarize the results of the model.  Does evidence exist that the smoothed terms are significantly non-linear?  Produce visual displays to support your conclusions. [20 points]
+(b) For your model in part (a), summarize the predictive ability by computing a misclassification rate. [10 points]
+(c) Consider a version of model (a) that does not include the `cuisine` predictor variable.  Explain briefly how you would test in your model whether `cuisine` is an important predictor of the probability of a good restaurant rating.  Perform the test, and explain your conclusions. [15 points]
+
+
+
+```{r, echo = FALSE, fig.height = 7, fig.width = 9}
+posterior_pA = function(alpha, yA = NULL, yB = NULL, y_til = NULL){
+	# number of features
+	K = length(yA)
+
+	# total word counts
+	n = sum(y_til)
+	nA = sum(yA)
+	nB = sum(yB)
+
+	# posterior predictive distribution of being class A
+	A1 = lfactorial(n) + lfactorial(nA) - lfactorial(n + nA)
+	A2 = sum(lfactorial(y_til + yA)) - sum(lfactorial(y_til)) - sum(lfactorial(yA))
+	A3 = lfactorial(n + nA) + lgamma(K*alpha) - lgamma(n + nA + K*alpha)
+	A4 = sum(lgamma(y_til + yA + alpha) - lfactorial(y_til + yA) - lgamma(alpha))
+	A5 = lfactorial(nB) + lgamma(K*alpha) - lgamma(nB + K*alpha)
+	A6 = sum(lgamma(yB + alpha) - lfactorial(yB) - lgamma(alpha))
+
+	# posterior predictive distribution of being class B
+	B1 = lfactorial(n) + lfactorial(nB) - lfactorial(n + nB)
+	B2 = sum(lfactorial(y_til + yB)) - sum(lfactorial(y_til)) - sum(lfactorial(yB))
+	B3 = lfactorial(n + nB) + lgamma(K*alpha) - lgamma(n + nB + K*alpha)
+	B4 = sum(lgamma(y_til + yB + alpha) - lfactorial(y_til + yB) - lgamma(alpha))
+	B5 = lfactorial(nA) + lgamma(K*alpha) - lgamma(nA + K*alpha)
+	B6 = sum(lgamma(yA + alpha) - lfactorial(yA) - lgamma(alpha))
+
+	ratio_AB = exp(B1 + B2 + B3 + B4 + B5 + B6 - (A1 + A2 + A3 + A4 + A5 + A6))
+
+	# probability of being class A
+	pA = 1/(1 + ratio_AB)
+
+	return(pA)
+}
+
+```
