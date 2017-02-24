@@ -42,6 +42,35 @@ projEnvironment$posterior_pA = function(alpha, yA = NULL, yB = NULL, y_til = NUL
   return(pA)
 }
 
+# This function calculates an approximation to E[R_k|data] described above.
+projEnvironment$posterior_mean_R = function(alpha = 1, yA = NULL, yB = NULL, n.sim = NULL){
+  # number of features
+  K = length(yA)
+  alpha0 = rep(alpha, K)
+  # posterior parameter values
+  post_thetaA = MCmultinomdirichlet(yA, alpha0, mc = n.sim)
+  post_thetaB = MCmultinomdirichlet(yB, alpha0, mc = n.sim)
+  # empirical values of R_k
+  R = post_thetaA/(post_thetaA + post_thetaB)
+  # calculate approximation to E[R_k|data]
+  ER = apply(R, 2, mean)
+  return(ER)
+}
+
+# Visualize splines
+projEnvironment$plot_splines <- function(model, term){
+  pre_plt <- preplot(model, terms=term)[[1]]
+  df <- data.frame(x=pre_plt$x, y=pre_plt$y, se=pre_plt$se.y)
+  ggplot(df, aes(x=x, y=y)) +
+    geom_line(size=0.9) +
+    geom_ribbon(aes(ymin=df$y - df$se, ymax=df$y + df$se),
+                alpha=0.2, fill="black") +
+    scale_y_continuous(limits=c(min(df$y*4), max(df$y*4))) +
+    ylab(label=pre_plt$ylab) +
+    xlab(label=pre_plt$xlab) +
+    theme_bw()
+}
+
 attach(projEnvironment)
 rm(projEnvironment)
 
