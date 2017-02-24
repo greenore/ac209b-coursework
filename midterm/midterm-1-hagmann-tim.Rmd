@@ -436,11 +436,14 @@ The above table shows, that the model with the lowest missclassification rate on
 
 (c) Consider a version of model (a) that does not include the `cuisine` predictor variable.  Explain briefly how you would test in your model whether `cuisine` is an important predictor of the probability of a good restaurant rating.  Perform the test, and explain your conclusions. [15 points]
 
-In order to test if a variable adds value a **likelihood ratio test** can be performed. The test can be used to compare the goodness of fit of two models, one of which (the null model) is a special case of the other (the alternative model). The test is based on the likelihood ratio, which expresses how many times more likely the data are under one model than the other. 
+During the above analysis we already saw two indicators that the variable **cuisine** is not an important variable for predicting the rating of a review. The first was that the value is highly insignificant, the second that excluding the variable from the model actually increases the accuracy of the prediction on the testing set. A third way is to perform a a **likelihood ratio test**. The test can be used to compare the goodness of fit of two models, one of which (the null model) is a special case of the other (the alternative model). The test is based on the likelihood ratio, which expresses how many times more likely the data are under one model than the other. 
 
+Table 2: Anova intercept vs. full model
 ```{r}
-
+anova_tbl <- anova(fit_gam_lin, fit_gam_lin2, test="Chi")
+pander(anova_tbl,
+       add.significance.stars=TRUE, style='rmarkdown', caption="",
+       split.table=Inf, digits=2, justify='center')
 ```
 
-
-
+The above table shows, that the difference in performance between the two models (i.e., with and without the variable **cuisine**) is not statistically significant.
