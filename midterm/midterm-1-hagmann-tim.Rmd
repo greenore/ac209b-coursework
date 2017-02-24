@@ -255,11 +255,74 @@ business_attributes <- c("rating","latitude", "longitude", "cuisine",
                          "WheelchairAccessible", "WiFi", "BusinessAcceptsCreditCards",
                          "Alcohol", "NoiseLevel", "RestaurantsPriceRange2",
                          "RestaurantsAttire", "Smoking", "RestaurantsReservations",
-                         "OutdoorSeating", "GoodForKids", "avg_word_count", "state")
+                         "OutdoorSeating", "GoodForKids", "avg_word_count")
 
 # Create new dataframes
 df_train2 <- df_train[, business_attributes]
 df_test2 <- df_test[, business_attributes]
+
+# Normalize data
+df_train2$longitude <- as.numeric(scale(df_train2$longitude))
+df_train2$latitude <- as.numeric(scale(df_train2$latitude))
+df_test2$longitude <- as.numeric(scale(df_test2$longitude))
+df_test2$latitude <- as.numeric(scale(df_test2$latitude))
+df_train2$avg_word_count <- as.numeric(scale(df_train2$avg_word_count))
+df_test2$avg_word_count <- as.numeric(scale(df_test2$avg_word_count))
+```
+
+### Cleanup
+```{r}
+# Remove non zero values
+nzv <- c("WheelchairAccessible", "BusinessAcceptsCreditCards", "RestaurantsAttire")
+pander(summary(df_train2[, nzv]))
+df_train2 <- df_train2[, !names(df_train2) %in% nzv]
+df_test2 <- df_test2[, !names(df_train2) %in% nzv]
+rm(nzv)
+```
+
+Values which have a near zero variance are removed, as they are prown to overfitting and furthermore lead to issues in crossvalidation.
+
+### Find best spar value trough 5-fold crossvalidation
+```{r}
+# Crossvalidate best spar value
+cv_gam_spar <- function(spars, k_folds, data){
+  acc <- rep(NA, length(spars))
+  for (i in 1:length(spars)) {
+    gam_formula <- as.formula(paste0("rating ~ s(longitude, spar=",spars[i],") +
+                                  s(latitude, spar=",spars[i],") +
+                                  s(avg_word_count, spar=",spars[i],") +
+                                  cuisine + RestaurantsPriceRange2 +
+                                  Smoking + RestaurantsReservations +
+                                  WiFi + OutdoorSeating + GoodForKids"))
+    model_gam <- gam(gam_formula, data=data, family=binomial(link = "logit"))
+    acc[i] <- 1 - boot::cv.glm(data, model_gam, K=k_folds)$delta[1]
+  }
+
+  df_spars <- data.frame("spar_val"=spars, "accuracy"=acc)
+  df_spars
+}
+
+set.seed(123)
+df_cv_spars <- cv_gam_spar(spars=seq(0.6, 1, 0.02), k_folds=5, data=df_train2)
+```
+
+### Visualize value
+```{r}
+# Find spar with highest CV accuracy
+df_best <- df_cv_spars[df_cv_spars$accuracy == max(df_cv_spars$accuracy), ]
+
+# Plot - Classification accuracy as a function of Spar values
+ggplot(df_cv_spars, aes(x=spar_val, y=accuracy)) +
+  geom_line() +
+  labs(x="Spar",
+       y="Accuracy",
+       title=sprintf("5-fold cross-validation: Best spar = %.3f with CV accuracy %.3f",
+                     df_best$spar_val, df_best$accuracy)) + 
+  geom_hline(yintercept=df_best$accuracy, linetype="dashed",
+             color="darkred", size=0.7) +
+  geom_vline(xintercept=df_best$spar_val, linetype="dashed",
+             color="darkred", size=0.7) +
+  theme_bw()
 ```
 
 ### Fit different models
@@ -273,54 +336,111 @@ fit_gam_lin <- gam(rating ~ ., family=binomial(link="logit"),
                    data=df_train2)
 
 # GAM with splines
-fit_gam_spl <- gam(rating ~ s(latitude) + s(longitude) + cuisine +
-                     WheelchairAccessible + WiFi + BusinessAcceptsCreditCards +
-                     Alcohol + NoiseLevel + s(RestaurantsPriceRange2) + 
-                     RestaurantsAttire + Smoking + RestaurantsReservations +
-                     OutdoorSeating + GoodForKids + s(avg_word_count),
+fit_gam_spl <- gam(rating ~ s(latitude, spar=0.98) +
+                     s(longitude, spar=0.98) +
+                     s(avg_word_count, spar=0.98) +
+                     s(RestaurantsPriceRange2, spar=0.98) +
+                     cuisine + WiFi + Alcohol + NoiseLevel + 
+                     Smoking + RestaurantsReservations +
+                     OutdoorSeating + GoodForKids,
                    family=binomial(link="logit"),
                    data=df_train2)
 ```
 
 #### Visualize
 ```{r}
-g1 <- plot_splines(model=fit_gam_spl, term="s(latitude)")
-g2 <- plot_splines(model=fit_gam_spl, term="s(longitude)")
-g3 <- plot_splines(model=fit_gam_spl, term="s(RestaurantsPriceRange2)")
-g4 <- plot_splines(model=fit_gam_spl, term="s(avg_word_count)")
+g1 <- plot_splines(model=fit_gam_spl, term=names(preplot(fit_gam_spl))[1])
+g2 <- plot_splines(model=fit_gam_spl, term=names(preplot(fit_gam_spl))[2])
+g3 <- plot_splines(model=fit_gam_spl, term=names(preplot(fit_gam_spl))[3])
+g4 <- plot_splines(model=fit_gam_spl, term=names(preplot(fit_gam_spl))[4])
+
 grid.arrange(g1, g2, g3, g4, nrow=2, ncol=2)
 ```
 
-The plot above shows, that there is some non-linear behavior present in the numerical data. 
+The plot above shows, that there is some non-linear behavior present in latidue, longtite and avg_word_count. The RestaurantsPriceRange2 on the other hand appears to be linear. 
 
+### Analyse the parameters
+```{r}
+# GAM with splines
+pander(summary(fit_gam_spl)[[4]],
+       add.significance.stars=FALSE, style='rmarkdown', caption="",
+       split.table=Inf, digits=2, justify='center')
+```
+
+The above table shows, that the variable **cuisine** is highly insignificant. In the next steps we're excluding this variable.
+
+### Optimization
+```{r}
+fit_gam_lin2 <- gam(rating ~ latitude + longitude +
+                     avg_word_count + RestaurantsPriceRange2 +
+                     WiFi + Alcohol + NoiseLevel + 
+                     Smoking + RestaurantsReservations +
+                     OutdoorSeating + GoodForKids,
+                   family=binomial(link="logit"),
+                   data=df_train2)
+
+fit_gam_spl2 <- gam(rating ~ s(latitude, spar=0.98) +
+                     s(longitude, spar=0.98) +
+                     s(avg_word_count, spar=0.98) +
+                     s(RestaurantsPriceRange2, spar=0.98) +
+                     WiFi + Alcohol + NoiseLevel + 
+                     Smoking + RestaurantsReservations +
+                     OutdoorSeating + GoodForKids,
+                   family=binomial(link="logit"),
+                   data=df_train2)
+```
+
+(b) For your model in part (a), summarize the predictive ability by computing a misclassification rate. [10 points]
+
+### Prediction
 ```{r}
 # Prediction
 pred_gam_intercept <- predict(fit_gam_intercept, newdata=df_test2, type="response")
 pred_gam_lin <- predict(fit_gam_lin, newdata=df_test2, type="response")
+pred_gam_lin2 <- predict(fit_gam_lin2, newdata=df_test2, type="response")
 pred_gam_spl <- predict(fit_gam_spl, newdata=df_test2, type="response")
+pred_gam_spl2 <- predict(fit_gam_spl2, newdata=df_test2, type="response")
 
 # Confusion matrix
 cm_gam_intercept <- table(Actual=df_test2$rating, Predicted=pred_gam_intercept > 0.5)
 cm_gam_lin <- table(Actual=df_test2$rating, Predicted=pred_gam_lin > 0.5)
+cm_gam_lin2 <- table(Actual=df_test2$rating, Predicted=pred_gam_lin2 > 0.5)
 cm_gam_spl <- table(Actual=df_test2$rating, Predicted=pred_gam_spl > 0.5)
+cm_gam_spl2 <- table(Actual=df_test2$rating, Predicted=pred_gam_spl2 > 0.5)
 
-# Accuracy
+# Extract values
+model_names <- c("Null Model:", "Full w/o splines:", "Optimized w/o splines",
+                 "Full GAM w splines:", "Optimized GAM w splines") 
+
+# Accuracy (TP+TN)/total 
 acc_gam_intercept <- sum(diag(cm_gam_intercept)) / sum(cm_gam_intercept)
 acc_gam_lin <- sum(diag(cm_gam_lin)) / sum(cm_gam_lin)
+acc_gam_lin2 <- sum(diag(cm_gam_lin2)) / sum(cm_gam_lin2)
 acc_gam_spl <- sum(diag(cm_gam_spl)) / sum(cm_gam_spl)
+acc_gam_spl2 <- sum(diag(cm_gam_spl2)) / sum(cm_gam_spl2)
+accuracy <- c(acc_gam_intercept, acc_gam_lin, acc_gam_lin2, acc_gam_spl, acc_gam_spl2)
 
-print(c(acc_gam_intercept, acc_gam_lin, acc_gam_spl))
-rm(g1, g2, g3, g4)
+# Misslassification rate (FP+FN)/total or 1-accuracy
+mcr_gam_intercept <- 1 - acc_gam_intercept
+mcr_gam_lin <- 1 - acc_gam_lin
+mcr_gam_lin2 <- 1 - acc_gam_lin2
+mcr_gam_spl <- 1 - acc_gam_spl
+mcr_gam_spl2 <- 1 - acc_gam_spl2
+missclass <- c(mcr_gam_intercept, mcr_gam_lin, mcr_gam_lin2, mcr_gam_spl, mcr_gam_spl2)
+
+# Dataframe
+pander(data.frame("Model"=model_names, "Accuracy"=accuracy, "Missclassification"=missclass))
 ```
 
-
-(b) For your model in part (a), summarize the predictive ability by computing a misclassification rate. [10 points]
-
-
-
-
-
+The above table shows, that the model with the lowest missclassification rate on the test set is the model without splines and with the insignificant variable **cuisine** excluded. 
 
 (c) Consider a version of model (a) that does not include the `cuisine` predictor variable.  Explain briefly how you would test in your model whether `cuisine` is an important predictor of the probability of a good restaurant rating.  Perform the test, and explain your conclusions. [15 points]
+
+In order to test if a variable adds value a **likelihood ratio test** can be performed. The test can be used to compare the goodness of fit of two models, one of which (the null model) is a special case of the other (the alternative model). The test is based on the likelihood ratio, which expresses how many times more likely the data are under one model than the other. 
+
+```{r}
+
+```
+
 
 

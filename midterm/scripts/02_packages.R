@@ -9,7 +9,7 @@ if (Sys.info()["sysname"] == "Windows" & Sys.getenv("JAVA_HOME") == "") {
 tidyverse_packages <- c("tidyverse")
 visualization_packages <- c("RColorBrewer", "pander", "scales",
                             "gridExtra", "ggbeeswarm")
-modelling_packages <- c("splines", "gam", "e1071", "MCMCpack", "MGLM")
+modelling_packages <- c("gam", "e1071", "MCMCpack", "MGLM")
 
 required_packages <- c(tidyverse_packages, visualization_packages, modelling_packages)
 packagesCRAN(required_packages, update = setMissingVar(var_name="update_package", value = FALSE))
