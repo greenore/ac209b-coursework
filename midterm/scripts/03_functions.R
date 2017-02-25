@@ -39,10 +39,6 @@ projEnvironment$posterior_pA = function(alpha, yA = NULL, yB = NULL, y_til = NUL
   return(pA)
 }
 
-################
-# Own function #
-################
-
 # Plot map
 projEnvironment$plot_map <- function(df_state){
   # Get geo data
@@ -150,5 +146,3 @@ projEnvironment$plot_splines <- function(model, term){
 
 attach(projEnvironment)
 rm(projEnvironment)
-
-
