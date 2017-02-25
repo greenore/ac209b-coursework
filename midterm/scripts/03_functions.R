@@ -5,10 +5,7 @@
 if (any(search() %in% "projEnvironment")) detach("projEnvironment")
 projEnvironment <- new.env()
 
-#####################
-# Provided function #
-#####################
-
+# Posterior function
 projEnvironment$posterior_pA = function(alpha, yA = NULL, yB = NULL, y_til = NULL){
   # number of features
   K = length(yA)
@@ -42,19 +39,99 @@ projEnvironment$posterior_pA = function(alpha, yA = NULL, yB = NULL, y_til = NUL
   return(pA)
 }
 
-# This function calculates an approximation to E[R_k|data] described above.
-projEnvironment$posterior_mean_R = function(alpha = 1, yA = NULL, yB = NULL, n.sim = NULL){
+################
+# Own function #
+################
+
+# Plot map
+projEnvironment$plot_map <- function(df_state){
+  # Get geo data
+  map_states <- map_data("state")
+  
+  # Prepare states dataset
+  df_state2 <- df_state
+  df_state2$state_name <- as.character(df_state2$state_name)
+  df_state2 <- merge(data.frame("region"=unique(map_states$region)),
+                     df_state[, c("state_name", "perc")],
+                     by.x="region", by.y="state_name", all.x=TRUE)
+  df_state2$perc[is.na(df_state2$perc)] <- 0
+  
+  # Set keys
+  df_states <- data.table(map_states)
+  setkey(df_states, region, subregion)
+  df_perc <- data.table(df_state2)
+  setkey(df_states, region)
+  
+  # Merge
+  df_map <- df_states[df_perc]
+  
+  # Get state names and locations
+  state_names <- aggregate(cbind(long, lat) ~ region, data=data.frame(map_states),
+                           FUN=mean)
+  
+  # Adjustments
+  state_names$long[state_names$region == "washington"] <-
+    state_names$long[state_names$region == "washington"] + 3
+  state_names$long[state_names$region == "north dakota"] <-
+    state_names$long[state_names$region == "north dakota"] - 2
+  state_names$long[state_names$region == "south dakota"] <-
+    state_names$long[state_names$region == "south dakota"] - 2
+  state_names$long[state_names$region == "nebraska"] <-
+    state_names$long[state_names$region == "nebraska"] - 2
+  state_names$long[state_names$region == "minnesota"] <-
+    state_names$long[state_names$region == "minnesota"] - 1
+  state_names$long[state_names$region == "missouri"] <-
+    state_names$long[state_names$region == "missouri"] - 1
+  state_names$long[state_names$region == "arizona"] <-
+    state_names$long[state_names$region == "arizona"] + 1.5
+  state_names$long[state_names$region == "california"] <-
+    state_names$long[state_names$region == "california"] + 1
+  state_names$long[state_names$region == "nevada"] <-
+    state_names$long[state_names$region == "nevada"] - 1
+  state_names$long[state_names$region == "kansas"] <-
+    state_names$long[state_names$region == "kansas"] - 2
+  state_names$long[state_names$region == "montana"] <-
+    state_names$long[state_names$region == "montana"] + 2
+  
+  state_names$lat[state_names$region == "illinois"] <-
+    state_names$lat[state_names$region == "illinois"] + 1
+  state_names$lat[state_names$region == "south dakota"] <-
+    state_names$lat[state_names$region == "south dakota"] + 1
+  state_names$lat[state_names$region == "nevada"] <-
+    state_names$lat[state_names$region == "nevada"] + 2
+  state_names$lat[state_names$region == "montana"] <-
+    state_names$lat[state_names$region == "montana"] + 1
+  state_names$lat[state_names$region == "idaho"] <-
+    state_names$lat[state_names$region == "idaho"] - 2
+  state_names$lat[state_names$region == "oregon"] <-
+    state_names$lat[state_names$region == "oregon"] - 1
+  state_names$lat[state_names$region == "oklahoma"] <-
+    state_names$lat[state_names$region == "oklahoma"] + 1
+  state_names$lat[state_names$region == "texas"] <-
+    state_names$lat[state_names$region == "texas"] + 1.5
+  ggplot() + 
+    geom_polygon(data=df_map, aes(x=long, y=lat, group=group, fill=perc),
+                 colour="white") + 
+    coord_map() +
+    theme_bw() +
+    labs(title="Plot I: Restaurant reviews in the different US states") +
+    ylab("Latitude") + 
+    xlab("Longitude") +
+    scale_fill_continuous(low="#292626", high="darkred", guide="colorbar") +
+    geom_text(data=state_names, aes(long, lat, label=region), size=3, color="white")
+}
+
+
+# This function calculates the posterior mean prbabilities
+projEnvironment$posterior_mean <- function(alpha=1, y=NULL, n_sim=NULL){
   # number of features
-  K = length(yA)
-  alpha0 = rep(alpha, K)
-  # posterior parameter values
-  post_thetaA = MCmultinomdirichlet(yA, alpha0, mc = n.sim)
-  post_thetaB = MCmultinomdirichlet(yB, alpha0, mc = n.sim)
-  # empirical values of R_k
-  R = post_thetaA/(post_thetaA + post_thetaB)
-  # calculate approximation to E[R_k|data]
-  ER = apply(R, 2, mean)
-  return(ER)
+  k <- length(y)
+  alpha0 <- rep(alpha, k)
+  
+  # posterior parameter values  
+  post_thetaA <- rdirichlet(n_sim, alpha + y)
+  ER_A <- apply(post_thetaA, 2, mean)
+  return(ER_A)
 }
 
 # Visualize splines

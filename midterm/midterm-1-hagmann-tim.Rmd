@@ -36,11 +36,7 @@ The data are split into a training and test set and are in the files `dataset_1_
 
 We use the bag-of-words encoding to generate the text features, where the set of reviews for a restaurant are represented by a vector of word counts. More specifically, we construct a dictionary of 100 frequent words in the customer reviews, and include 100 text features for each restaurant: the $i$-th feature contains the number of times the dictionary word $i$ occurs in customer reviews for the restaurant. For example, a text feature 'fantastic' with value 18 for a restaurant indicates that the word 'fantastic' was used a total of 18 times in customer reviews for that restaurant.
 
-# Problem 1 [20 points]
-
-Does the location of a restaurant relate to its rating?  Construct a compelling visualization to address this question, and write a brief (under 300 words) summary that clearly explains your analysis and conclusions to someone without a data science background.
-
-## Data preparation
+## Preparation
 In the following code chunk all the necessary setup for the modelling environment is done.
 
 ### Initialize
@@ -55,12 +51,20 @@ source("scripts/02_packages.R")               # Load all necessary packages
 source("scripts/03_functions.R")              # Load project specific functions
 ```
 
-### Load the data
+### Load data
 ```{r, message=FALSE}
 ## Read data
 df_train <- read.csv("data/dataset_1_train.txt", stringsAsFactors=TRUE)
 df_test <- read.csv("data/dataset_1_test.txt", stringsAsFactors=TRUE)
 ```
+
+# Problem 1 [20 points]
+
+Does the location of a restaurant relate to its rating?  Construct a compelling visualization to address this question, and write a brief (under 300 words) summary that clearly explains your analysis and conclusions to someone without a data science background.
+
+To determine if the location of a restaurant is a contributing factor to it's rating, a different number of visualization can be applied on the training data. There are 5 geograpic variables present in the data: **latitude**,  **longitude**, **postal code**, **city**, **state**. For the following analysis the most granular data with the **latitude** and **longitude** coordinates as well as the state information is beeing.
+
+Befor we start some preprocesing is beeing performed. 
 
 ### Preprocess data
 ```{r}
@@ -83,6 +87,12 @@ df_state2 <- aggregate((as.numeric(df_train$rating) - 1) ~ state,
 df_state <- merge(df_state1, df_state2, by="state", all=TRUE)
 names(df_state) <- c("state", "n_review", "sum_good_reviews")
 
+# Rename states
+df_state$id <- df_state$state
+df_state$state_name <- df_state$state
+levels(df_state$state_name) <- c("arizona", "illinois", "north carolina", "nevada",
+                                 "ohio", "pennsylvania", "south carolina", "wisconsin")
+
 # Calculations
 df_state$perc <- round((df_state$sum_good_reviews / df_state$n_review) * 100, 2)
 
@@ -99,8 +109,16 @@ levels(df_state$state) <- paste0("State:", levels(df_state$state),
 rm(df_state1, df_state2)
 ```
 
-### Visualize data
-The first steps is to visualize the data on a state level
+## Visualization
+The first steps is to visualize the data on a state level.
+
+### Geovisualization
+```{r}
+plot_map(df_state)
+```
+The above plot shows the distribution of the good reviews on a state level. At zero percent no data is available. There is only review data for the following states available: Nevada, Arizona, Wisconsin, Illinois, Ohio, Pennsylvania, North Carolina and South Carolina. The higher the red bar, the better are the reviews. There appears to be a difference on the state level. The next step is to visualize the data on a state level.
+
+### Inside the States
 ```{r, fig.height=12, fig.width=8}
 # Prepare for visualization
 p <- c()
@@ -118,19 +136,21 @@ for(i in 1:length(states)){
     xlab("Longitude")
 }
 
-do.call(grid.arrange, c(p, list(ncol=2, top="Plot I: Good reviews on a state level")))
+do.call(grid.arrange, c(p, list(ncol=2, top="Plot II: Good reviews on a state level")))
 ```
 
-The above plot I shows, that there appears to be no regional difference on a state level, i.e., the good and bad reviews appear to be evenly spread among the different states. That means that there is no visible in-state regional difference among good and bad reviews. As a next steps we're looking at the out-of-state variation among the reviews. 
+The above plot II shows, that there appears to be no regional difference on a state level, i.e., the good and bad reviews appear to be evenly spread among the different states. That means that there is no visible in-state regional difference among good and bad reviews. It appears that there is a between-state difference but no in-state difference. Next we're having a closer look at the difference at the between-state difference. 
 
+### Between-state difference
 ```{r, fig.width=6, fig.height=4}
 # Calculate the mean review percentage
 mean_review <- mean(as.numeric(df_train$rating)-1) * 100
 
 # Visualize
 ggplot(df_state, aes(x=state, y=perc)) +
-    labs(title="Plot II: Good reviews between different states",
-       subtitle="Barchart with a percentage of good reviews according to the state level") +
+    labs(title="Plot III: Good reviews between different states",
+       subtitle=
+         "Barchart with a percentage of good reviews according to the state level") +
   geom_bar(stat="identity", colour="white", fill="black", alpha=0.7) +
   theme_bw() +
   ylab("Percent of good reviews") + 
@@ -140,7 +160,13 @@ ggplot(df_state, aes(x=state, y=perc)) +
   coord_flip()
 ```
 
-There appears to be difference on a in-between state level concerning the percentage of good and bad reviews. On average reviewers give in `r sprintf("%.1f", mean_review)`  % of the cases a good review. The above plot shows, that illinois, Arizona and Ohio have an above average of good reviews while the other states a below the overall average. Illinios has the highest amount of good reviews while South Carolina has the highest amount of bad reviews. However, it has to be noted, that there were only 8 reviews in Illinios and 4 in South Carolina, which puts those statments on a shaky foundation. The other states on the other hand have many more reviews and there is also difference vizible with Arizona leading with more thant 60% good reviews and Pensilvenia having the worst reviews with only around 45% good reviews. 
+As already noted, there appears to be a slight difference concerning the percentage of good and bad reviews between the states. On average, reviewers give in `r sprintf("%.1f", mean_review)`% of the cases a good review (noted by the **red line**). The above plot shows, that Illinois, Arizona and Ohio have an above average of good reviews while the other states are below average.
+
+Illinois has the highest amount of good reviews while South Carolina has the highest amount of bad reviews. However, there were only 8 reviews in Illinois and 4 in South Carolina, which puts there rank on a shaky foundation. Only one good respectively bad review and they switch there rank with another state.
+
+Looking at the state with more reviews shows, that Arizona is in the first place concerning good reviews (60%) and Pennsylvania is on last place with only around 45% good reviews. Looking at the overall variability in the data, it shows, that the states with sufficiently many reviews the amount of good and bad reviews don't vary much around the overall average. This was also 
+
+The location of a restaurant appears to have only a small effect on its review. This was also visible in Plot II where there was no in-state connection between location and review visible. This analysis suggests that predicting the rating of a restaurant based on its location alone isn't be advisable.
 
 ```{r, include=FALSE}
 # Cleanup
@@ -148,7 +174,6 @@ rm(i, p, df_state, states, mean_review)
 ```
 
 # Problem 2 [35 points]
-
 This problem is concerned with predicting a restaurant's rating based on text features. We'll consider the Multinomial-Dirichlet Bayesian model to describe the distribution of text features and finally to predict the binary ratings.
 
 **Probability model:** Let $(y^g_1, y^g_2, \ldots, y^g_{100})$ denote the total counts of the $100$ dictionary words across the reviews for "good" restaurants, and $(y^b_1, y^b_2, \ldots, y^b_{100})$ denote the total counts of the $100$ dictionary words across the reviews for "bad" restaurants. We assume the following *multinomial* likelihood model:
@@ -167,44 +192,43 @@ p(\theta^b_1, \ldots, \theta^b_{100})  \,\propto\, (\theta^b_1)^{\alpha}\ldots(\
 \]
 Hence we can interpret, for example, $\theta^g_5$ as the probability the word "perfect" is observed once in a review of "good" restaurants. For the purposes of this problem, set $\alpha=2$.
 
-(a) Describe briefly in words why the posterior distribution formed from a Dirichlet prior distribution and a multinomial likelihood is a Dirichlet posterior distribution? What are the parameters for the Dirichlet posterior distribution? [5 points]
+## (a) Dirichlet posterior distribution 
+Describe briefly in words why the posterior distribution formed from a Dirichlet prior distribution and a multinomial likelihood is a Dirichlet posterior distribution? What are the parameters for the Dirichlet posterior distribution? [5 points]
 
-A Dirichlet distribution is the conjugate prior for the multinomial distribution. This is because  posterior Dirichlet distribution p(θ|x) is in the same family as the prior probability distribution p(θ). In other words, because the prior distribution of the multinomial parameters is Dirichlet, the posterior distribution is also a Dirichlet distribution or the  *Dirichlet posterior*  \,\propto\, *Dirichlet prior* x *multinomial likelihood*. 
+A Dirichlet distribution is the conjugate prior for the multinomial likelihood distribution. This is the case because the posterior Dirichlet distribution is in the same family as the prior probability distribution. In other words, a posterior distribution formed from a Dirichlet prior and Multinomial likelihood will follow a Dirichlet distribution (even though with different parameters).
 
-Concerning the posterior Dirichlet parameters, they equal the sum of the count data and the parameters from the prior Dirichlet, alpha. The distribution can be summarized by the following parameters:
+The Multinomial distribution is the probability to observe every possible outcome $c_i$ $X_i$ times in a sequence of n trials **(1/0)**. Which is parameterised by a vector of occurence counts **(N)**. The Dirichlet distribution is a density distribution over **n** positive numbers parameterised by a vector $\alpha$. The Dirichlet Multinomial posterior distribution has the parameters **N** and $\alpha$.
 
--Posterior mean
--Posterior mode
--Central posterior interval
--Highest posterior density (HPD)
--Value of alpha
+## (b) Monte Carlo Simulation
+From a Monte Carlo simulation of the Dirichlet posterior distribution for "good" restaurants, what is the posterior mean probability that the word "chocolate" is used? From a Monte Carlo simulation of the Dirichlet posterior distribution for bad restaurants, what is the posterior mean probability that the word "chocolate" is used? [15 points]
 
-(b) From a Monte Carlo simulation of the Dirichlet posterior distribution for "good" restaurants, what is the posterior mean probability that the word "chocolate" is used? 
-
-From a Monte Carlo simulation of the Dirichlet posterior distribution for bad restaurants, what is the posterior mean probability that the word "chocolate" is used?
-
-**Hint**: use the `rdirichlet` function in the `MCMCpack` library. [15 points]
-
+### MC Simulation
 ```{r}
 # the total word counts from all articles by author A in the training set
 yA <- as.numeric(apply(df_train[df_train$rating == 'good', words], 2, sum))
 yB <- as.numeric(apply(df_train[df_train$rating == 'bad', words], 2, sum))
 
-# Apply the function
+# Apply a posterior mean function
 set.seed(123)
-post_mean_good <- posterior_mean_R(alpha=2, yA=yA, yB=yB, n.sim=1000)
+ER_A <- posterior_mean(alpha=2, y=yA, n_sim=3000)
+ER_B <- posterior_mean(alpha=2, y=yB, n_sim=3000)
 
 # Get the probabilty values
-df_good <- data.frame(post_mean_good, words)
-df_good <- df_good[order(-post_mean_good), ]
+df_mean_values <- data.frame("word"=words, "prob_good"=ER_A, "prob_bad"=ER_B)
 
-prob_good <- df_good[df_good$words == "chocolate", 1]
-prob_bad <- 1 - prob_good
-rm(df_good)
+rm(ER_A, ER_B)
 ```
 
-(c) For the restaurants in the test data set, estimate the probability based on the results of the Dirichlet-Multinomial model that each is good versus bad. You may want to apply the function `posterior_pA` provided below (in `midterm-1.Rmd`).  Create a visual summary relating the estimated probabilities and the actual binary ratings in the test data. [15 points]
+The posterior mean porbabilty that for a good restaurant review the word **chocolate** is used is: `r sprintf("%.2f", df_mean_values[df_mean_values$word == "chocolate", "prob_good"]*100)`%. This compared to: `r sprintf("%.2f", df_mean_values[df_mean_values$word == "chocolate", "prob_good"]*100)`% for a bad restaurant.
 
+## (c) Calculate the Dirichlet-Multinomial model
+For the restaurants in the test data set, estimate the probability based on the results of the Dirichlet-Multinomial model that each is good versus bad. Create a visual summary relating the estimated probabilities and the actual binary ratings in the test data. [15 points]
+
+We can use the posterior_pA function (**scripts/functions.R**) to infer the rating for a given restaurant review.
+
+**Note:** The Dirichlet parameter $alpha$ is set to 2.
+
+### Calculation
 ```{r}
 prob_dirichlet <- rep(NA, nrow(df_test))
 for(i in 1:nrow(df_test)){
@@ -212,15 +236,26 @@ for(i in 1:nrow(df_test)){
   prob_dirichlet[i] = posterior_pA(alpha=2, yA=yA, yB=yB, y_til=y_til)
 }
 
-df_pred <- data.frame(df_test$rating, round(prob_dirichlet * 100, 1))
+df_pred <- data.frame(df_test$rating, prob_dirichlet)
 names(df_pred) <- c("actual", "prob_good")
+miss_class_rate <- mclust::classError(df_pred$prob_good > 0.5,
+                                      df_pred$actual)$errorRate * 100
 ```
 
-# Visualization
+### Table I: Confusion matrix
 ```{r}
+# Confusion matrix 
+pander(table(df_pred$actual, ifelse(df_pred$prob_good > 0.5, 1, 0)))
+```
+
+The confusion matrix shows that some good restaurants are misclassified as bad and vice verca. This can be also shown in a visualization. The missclassification rate is at:
+`r sprintf("%.2f", miss_class_rate)`%.
+
+### Visualization
+```{r, fig.width=8, fig.height=4}
+df_pred$prob_good <- df_pred$prob_good * 100
 ggplot() + 
-  labs(title="Plot II: Predicted Probabilities", 
-       subtitle="of Lennon−composed songs based on melodic transitions") +
+  labs(title="Plot III: Predicted Probabilities") +
   geom_histogram(data=df_pred[df_pred$actual == "good", ],
                  aes(prob_good, y = ..count.., fill="b", color="b"),
                  alpha=0.9, bins=30) +
@@ -238,8 +273,10 @@ ggplot() +
   theme_bw()
 ```
 
+The histogram above shows, that for the good restaurant reviews **(black)**, some restaurants are missclassified as bad, i.e., the one that are below the 50% mark. The same is true for the bad restaurant reviews **(red)**, where some bad reviews are wrongly labled as good. 
+
 ```{r, include=FALSE}
-rm(i, df_pred, y_til, prob_dirichlet, prob_good, prob_bad, yA, yB, post_mean_good)
+rm(i, df_pred, y_til, prob_dirichlet)
 ```
 
 # Problem 3 [45 points]
@@ -247,6 +284,8 @@ This problem is concerned with modeling a restaurant's rating on factors other t
 
 ## (a) Model based on business attributes
 Construct a model for the probability a restaurant is rated "good" as a function of latitude and longitude, average word count, and business attributes.  Include quantitative predictor variables as smoothed terms as you see appropriate. You may use default tuning parameter. Summarize the results of the model. Does evidence exist that the smoothed terms are significantly non-linear?  Produce visual displays to support your conclusions. [20 points]
+
+In order to model the different business attributes a GAM model with smoothing splines for the quantitative factors can be used. Before starting to model we do some preprocessing and data cleaning.
 
 ### Preprocess data
 ```{r}
@@ -282,6 +321,8 @@ rm(nzv)
 
 Values which have a near zero variance are removed, as they are prown to overfitting and furthermore lead to issues in crossvalidation.
 
+In order to find the best spar parameter value a 5-fold crossvalidation is beeing performed.
+
 ### Find best spar value trough 5-fold crossvalidation
 ```{r}
 # Crossvalidate best spar value
@@ -289,15 +330,15 @@ cv_gam_spar <- function(spars, k_folds, data){
   acc <- rep(NA, length(spars))
   for (i in 1:length(spars)) {
     gam_formula <- as.formula(paste0("rating ~ s(longitude, spar=",spars[i],") +
-                                  s(latitude, spar=",spars[i],") +
-                                  s(avg_word_count, spar=",spars[i],") +
-                                  cuisine + RestaurantsPriceRange2 +
-                                  Smoking + RestaurantsReservations +
-                                  WiFi + OutdoorSeating + GoodForKids"))
+                                     s(latitude, spar=",spars[i],") +
+                                     s(avg_word_count, spar=",spars[i],") +
+                                     cuisine + RestaurantsPriceRange2 +
+                                     Smoking + RestaurantsReservations +
+                                     WiFi + OutdoorSeating + GoodForKids"))
     model_gam <- gam(gam_formula, data=data, family=binomial(link = "logit"))
     acc[i] <- 1 - boot::cv.glm(data, model_gam, K=k_folds)$delta[1]
   }
-
+  
   df_spars <- data.frame("spar_val"=spars, "accuracy"=acc)
   df_spars
 }
@@ -325,6 +366,8 @@ ggplot(df_cv_spars, aes(x=spar_val, y=accuracy)) +
   theme_bw()
 ```
 
+The optimal value appears to be at a spar of 0.98. This value is used for the modeling. In order to have a benchmark three modells are beeing build, a Null model, a full model without splines and a model with splines. 
+
 ### Fit different models
 ```{r}
 # GAM with only the intercept
@@ -347,6 +390,8 @@ fit_gam_spl <- gam(rating ~ s(latitude, spar=0.98) +
                    data=df_train2)
 ```
 
+Looking a the smooth of the predictors can indicate if the smoothed term are linear or non-linear. 
+
 #### Visualize
 ```{r}
 g1 <- plot_splines(model=fit_gam_spl, term=names(preplot(fit_gam_spl))[1])
@@ -357,7 +402,8 @@ g4 <- plot_splines(model=fit_gam_spl, term=names(preplot(fit_gam_spl))[4])
 grid.arrange(g1, g2, g3, g4, nrow=2, ncol=2)
 ```
 
-The plot above shows, that there is some non-linear behavior present in latidue, longtite and avg_word_count. The RestaurantsPriceRange2 on the other hand appears to be linear. 
+The plot above shows, that there is some non-linear behavior present. 
+The **longitude** and **latitude** variables show non linearity as their values are being concentrated in a few specific regions (see question 1). The avg_word_count also appears to have a non-linear relationship with the response. However, at a standartized word count bigger than 5 there are few data points and the confidence intervals is large. The RestaurantsPriceRange2 on the other hand appears to be linear.
 
 ### Analyse the parameters
 ```{r}
@@ -390,7 +436,10 @@ fit_gam_spl2 <- gam(rating ~ s(latitude, spar=0.98) +
                    data=df_train2)
 ```
 
-(b) For your model in part (a), summarize the predictive ability by computing a misclassification rate. [10 points]
+Next we're looking at the missclassification rates of the different models.
+
+## (b) Missclassification rate
+For your model in part (a), summarize the predictive ability by computing a misclassification rate. [10 points]
 
 ### Prediction
 ```{r}
@@ -408,10 +457,6 @@ cm_gam_lin2 <- table(Actual=df_test2$rating, Predicted=pred_gam_lin2 > 0.5)
 cm_gam_spl <- table(Actual=df_test2$rating, Predicted=pred_gam_spl > 0.5)
 cm_gam_spl2 <- table(Actual=df_test2$rating, Predicted=pred_gam_spl2 > 0.5)
 
-# Extract values
-model_names <- c("Null Model:", "Full w/o splines:", "Optimized w/o splines",
-                 "Full GAM w splines:", "Optimized GAM w splines") 
-
 # Accuracy (TP+TN)/total 
 acc_gam_intercept <- sum(diag(cm_gam_intercept)) / sum(cm_gam_intercept)
 acc_gam_lin <- sum(diag(cm_gam_lin)) / sum(cm_gam_lin)
@@ -428,17 +473,26 @@ mcr_gam_spl <- 1 - acc_gam_spl
 mcr_gam_spl2 <- 1 - acc_gam_spl2
 missclass <- c(mcr_gam_intercept, mcr_gam_lin, mcr_gam_lin2, mcr_gam_spl, mcr_gam_spl2)
 
-# Dataframe
-pander(data.frame("Model"=model_names, "Accuracy"=accuracy, "Missclassification"=missclass))
 ```
 
-The above table shows, that the model with the lowest missclassification rate on the test set is the model without splines and with the insignificant variable **cuisine** excluded. 
+### Table I: Accuracy an missclassification rate on teh test data
+```{r}
+# Names
+model_names <- c("Null Model", "Full wo splines", "Optimized wo splines",
+                 "Full GAM w splines", "Optimized GAM w splines") 
+# Dataframe
+pander(data.frame("Model"=model_names, "Accuracy"=accuracy, "Missclassification"=missclass))
 
-(c) Consider a version of model (a) that does not include the `cuisine` predictor variable.  Explain briefly how you would test in your model whether `cuisine` is an important predictor of the probability of a good restaurant rating.  Perform the test, and explain your conclusions. [15 points]
+```
+
+The above table shows, that the model with the lowest missclassification rate on the test set is the model without splines and with the insignificant variable **cuisine** excluded. Overall it can also be said that the misslassification rate for all the models is above 40% which is almost double the rate for the model with the word occurance. This makes intuitivly sense as the words express the customers fillings and opinions while the business attributes are much more indirectly related.
+
+## (c) Likelihood ratio test
+Consider a version of model (a) that does not include the `cuisine` predictor variable.  Explain briefly how you would test in your model whether `cuisine` is an important predictor of the probability of a good restaurant rating.  Perform the test, and explain your conclusions. [15 points]
 
 During the above analysis we already saw two indicators that the variable **cuisine** is not an important variable for predicting the rating of a review. The first was that the value is highly insignificant, the second that excluding the variable from the model actually increases the accuracy of the prediction on the testing set. A third way is to perform a a **likelihood ratio test**. The test can be used to compare the goodness of fit of two models, one of which (the null model) is a special case of the other (the alternative model). The test is based on the likelihood ratio, which expresses how many times more likely the data are under one model than the other. 
 
-Table 2: Anova intercept vs. full model
+### Table II: Likelihood ratio test
 ```{r}
 anova_tbl <- anova(fit_gam_lin, fit_gam_lin2, test="Chi")
 pander(anova_tbl,

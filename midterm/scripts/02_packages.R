@@ -6,9 +6,9 @@ if (Sys.info()["sysname"] == "Windows" & Sys.getenv("JAVA_HOME") == "") {
 }
 
 ## CRAN packages
-tidyverse_packages <- c("tidyverse")
+tidyverse_packages <- c("tidyverse", "data.table")
 visualization_packages <- c("RColorBrewer", "pander", "scales",
-                            "gridExtra", "ggbeeswarm")
+                            "gridExtra", "ggbeeswarm", "maps")
 modelling_packages <- c("gam", "e1071", "MCMCpack", "MGLM")
 
 required_packages <- c(tidyverse_packages, visualization_packages, modelling_packages)
