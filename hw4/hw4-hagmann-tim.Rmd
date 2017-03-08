@@ -36,25 +36,326 @@ SVMs are computationally intensive, much more so than other methods we've used i
 
 In this problem, the task is to classify a celestial object into one of 4 categories using photometric measurements recorded about the object. The training and testing datasets are provided in the `dataset_1_train.txt` and `dataset_1_test.txt` respectively. Overall, there are a total of 1,379 celestial objects described by 61 attributes. The last column contains the object category we wish to predict, `Class`.
 
-We'll be working with Support Vector Machines, trying out different kernels, tuning, and other fun things. *Hint*: Use the `kernel`, `degree`, `cost`, `gamma` arguments of the `svm` function appropriately.
+### Initialize
+In the following code chunk all the necessary setup for the modelling environment is done.
 
+```{r init, message=FALSE}
+## Options
+options(scipen = 10)                          # Disable scientific notation
+update_package <- FALSE                       # Use old status of packages
+
+## Init files (always execute, eta: 10s)
+source("scripts/01_init.R")                   # Helper functions to load packages
+source("scripts/02_packages.R")               # Load all necessary packages
+source("scripts/03_functions.R")              # Load project specific functions
+```
 
 First, ensure that the that `Class` is a factor (quantitative values). These should be object categories and not integer values -- use `as.factor` if needed. 
 
-1. Fit an RBF kernel to the training set with parameters `gamma` and `cost` both set to 1. Use the model to predict on the test set. 
+### Load the data
+```{r, message=FALSE}
+## Read data
+df_train <- data.frame(read_csv("data/dataset_1_train.txt"))
+df_test <- data.frame(read_csv("data/dataset_1_test.txt"))
+```
 
-2. Look at the confusion matricies for both the training and testing predictions from the above model. What do you notice about the predictions from this model?  *Hint*: The `confusionMatrix` function in the `caret` package is quite useful.
+### Preprocess data
+```{r}
+# Transform y variable to factor
+df_train$Class <- as.factor(df_train$Class)
+df_test$Class <- as.factor(df_test$Class)
+```
 
-3. For the RBF kernel, make a figure showing the effect of the kernel parameter $\gamma$ on the training and test errors? Consider some values of `gamma` between 0.001 and 0.3. Explain what you are seeing. 
+## 1. RBF Kernel (fixed parameters)
+Fit an RBF kernel to the training set with parameters `gamma` and `cost` both set to 1. Use the model to predict on the test set. 
 
-4. For the RBF kernel, make a figure showing the effect of the `cost` parameter on the training and test errors? Consider some values of `cost` in the range of 0.1 to 20. Explain what you are seeing. 
+```{r}
+fit_svm <- svm(Class ~ ., data=df_train, gamma=1, cost=1, kernel="radial")
 
-5. Now the fun part: fit SVM models with the linear, polynomial (degree 2) and RBF kernels to the training set, and report the misclassification error on the test set for each model. Do not forget to tune all relevant parameters using 5-fold cross-validation on the training set (tuning may take a while!). *Hint*: Use the `tune` function from the `e1071` library. You can plot the error surface using `plot` on the output of a `tune` function.
+pred_svm_train <- predict(fit_svm, df_train)
+pred_svm_test <- predict(fit_svm, df_test)
+```
+
+## 2. Confusion Matrix
+Look at the confusion matricies for both the training and testing predictions from the above model. What do you notice about the predictions from this model?
+
+### Training data
+```{r}
+conf_train <- confusionMatrix(pred_svm_train, df_train$Class)
+pander(conf_train$table)
+pander(conf_train$overall)
+```
+
+Looking at the confusion matrix on the training set shows, that the accuracy is at 100%. That means that the model classifies all 4 classes 100% correctly. This is an indication that there is overfitting happening. In order to check this lets look at the test data.
+
+### Test data
+```{r}
+conf_test <- confusionMatrix(pred_svm_test, df_test$Class)
+pander(conf_test$table)
+pander(conf_test$overall)
+
+rm(fit_svm, pred_svm_test, pred_svm_train)
+```
+
+The above table shows that the accuracy did drop heavealy from 100% to 72.3% which supports the above conclusion of an overfit. Furthermore, all the classes are classified as group 3, i.e., the majority group. This means that the model act as a 'naive' majority group classifier. 
+
+## 3. The $gamma$ parameter for a RBF kernel
+For the RBF kernel, make a figure showing the effect of the kernel parameter $\gamma$ on the training and test errors? Consider some values of `gamma` between 0.001 and 0.3. Explain what you are seeing. 
+
+### Gamma simulation
+```{r}
+# Set values
+gamma_values <- seq(0.001, 0.3, length.out=100)
+test_errors <- rep(0., length(gamma_values))
+train_errors <- rep(0., length(gamma_values))
+
+# Loop through each gamma value
+for (i in 1:length(gamma_values)) {
+  fit <- svm(Class ~ ., gamma=gamma_values[i], cost=1, data=df_train, kernel='radial')
+  pred_train <- predict(fit, newdata=df_train)
+  pred_test <- predict(fit, newdata=df_test)
+  train_errors[i] <- classError(pred_train, df_train$Class)$errorRate
+  test_errors[i] <- classError(pred_test, df_test$Class)$errorRate
+}
+
+# Wrap in a dataframe
+df_err <- data.frame(gamma_values, test_errors, train_errors)
+rm(fit, gamma_values, i, pred_test, pred_train, test_errors, train_errors, conf_test, conf_train)
+```
+
+### Output
+```{r}
+# Calculate best gammma
+best_gamma <- df_err$gamma_values[which(df_err$test_errors == min(df_err$test_errors))]
+
+# Print output
+cat('Gamma with lowest test error:', best_gamma)
+cat('\ntest error:', min(df_err$test_errors))
+```
+
+### Visualization
+```{r}
+# Tidy data 
+df_err <- gather(df_err, key=gamma_values)
+names(df_err) <- c("gamma_values", "data", "error")
+
+# Plot
+ggplot(data=df_err, aes(x=gamma_values, y=error, color=data)) +
+  geom_point(size=0.9) + 
+  geom_line() +
+  scale_colour_manual(values=c("darkred","black")) +
+  ylab("Error rate") +
+  xlab("Gamma value") +
+  ggtitle("Plot I: SVM train and test error rate by gamma value") +
+  theme_bw()
+```
+
+The above plot shows, that intially, when the $gamma$ value is increased, the error rate on the training as well as the test data decreases. However, after a *threshold* value where $gamma$ equals 0.007 the test error starts to increase up to a plateau of arround 30% while the training error continuous to decend until it reaches 0%. That means that after the *threshold* $gamma$ the svm starts overfitting the data. 
+
+Technically speaking, Gamma is the free parameter of the Gaussian radial basis function (RBF).
+
+$K(x_i, x_j) = exp(-gamma ||x_i-x_j||^2, gamma >0$
+
+A small $gamma$ means a Gaussian with a large variance so the influence of $x_j$ is more, i.e. if $x_j$ is a support vector, a small gamma implies the class of this support vector will have influence on deciding the class of the vector $x_i$ even if the distance between them is large. If gamma is large, then variance is small implying the support vector does not have wide-spread influence, i.e., a large $gamma$ leads to high bias and low variance models, and vice-versa.
+
+On the available data, with costs set to 1, a small $gamma$ appears to perform better on out-of-sample data. 
+
+## 4. The $cost$ parameter
+For the RBF kernel, make a figure showing the effect of the `cost` parameter on the training and test errors? Consider some values of `cost` in the range of 0.1 to 20. Explain what you are seeing. 
+
+### Cost simulation
+```{r}
+# Initiate list with costs and lists to store error rates
+cost_values <- seq(0.1, 20, length.out=50)
+test_errors <- rep(0., length(cost_values))
+train_errors <- rep(0., length(cost_values))
+
+# Loop through each cost value, fitting an svm and calculating training and test error artes
+for (i in 1:length(cost_values)) {
+  fit <- svm(Class ~ ., gamma=best_gamma, cost=cost_values[i], data=df_train, kernel='radial')
+  pred_train <- predict(fit, newdata=df_train)
+  pred_test <- predict(fit, newdata=df_test)
+  train_errors[i] <- classError(pred_train, df_train$Class)$errorRate
+  test_errors[i] <- classError(pred_test, df_test$Class)$errorRate
+}
+
+df_err <- data.frame(cost_values, test_errors, train_errors)
+rm(fit, cost_values, i, pred_test, pred_train, test_errors, train_errors)
+```
+
+### Output
+```{r}
+# Calculate best gammma
+best_cost <- df_err$cost_values[which(df_err$test_errors == min(df_err$test_errors))]
+
+# Print output
+cat('cost with lowest test error:', best_cost)
+cat('\ntest error:', min(df_err$test_errors))
+```
+
+### Visualization
+```{r}
+# Tidy data 
+df_err <- gather(df_err, key=cost_values)
+names(df_err) <- c("cost_values", "data", "error")
+
+# Plot
+ggplot(data=df_err, aes(x=cost_values, y=error, color=data)) +
+  geom_point(size=0.9) + 
+  geom_line() +
+  scale_colour_manual(values=c("darkred","black")) +
+  ylab("Error rate") +
+  xlab("Cost value") +
+  ggtitle("Plot II: SVM train and test error rate by cost value") +
+  theme_bw()
+```
+
+Similar to plot I, the error rate decreases in both the training as well as the test data. At the *threshold* level of 2.13 the test error plateaus and starts increasing at around 8. The training error continuous decreassing up to zero. 
+
+In general, a standard SVM seeks to find a margin that separates all positive and negative examples. As this can lead to poorly fit models *soft margins* are used which allows some examples to be *ignored* or placed on the wrong side of the margin. *C* is the parameter for the soft margin cost function, which controls the influence of each individual support vector, i.e., trading trading error penalty for model stability.
+
+## 5. SVM Kernel tuning (linear, polynomial, RBF)
+Fit SVM models with the linear, polynomial (degree 2) and RBF kernels to the training set, and report the misclassification error on the test set for each model. Do not forget to tune all relevant parameters using 5-fold cross-validation on the training set (tuning may take a while!).
+
+### Parameter values
+The following parameter values are informed from the allready performed optimization in 1-4. The gamma vector is only for the rbf kernel. 
+```{r}
+# Create a cost vector
+cost_vect <- seq(0.001, 5, length.out=20)
+
+# Create a gamma vector (for RBF only)
+gamma_vect <- seq(0.0001, 0.2, length.out=20)
+rm(best_cost, best_gamma, df_err)
+```
+
+### Linear Kernel
+```{r}
+# 5-fold crossvalidation 
+set.seed(123)
+fit_lin_cv <- tune(svm,
+                   Class ~ .,
+                   data=df_train,
+                   kernel="linear",
+                   tunecontrol=tune.control(sampling="cross", cross=5),
+                   ranges=list(cost=cost_vect)) 
+
+# Build model
+fit_lin <- svm(Class ~ ., 
+               data=df_train, 
+               kernel="linear",
+               cost=fit_lin_cv$best.parameters$cost)
+
+# Prediction
+pred_lin_test <- predict(fit_lin, df_test)
+```
+
+### 2nd degree polynomial kernel
+```{r}
+# 5-fold crossvalidation to tune the cost 
+set.seed(123)
+fit_poly_cv <- tune(svm,
+                    Class ~ .,
+                    data=df_train,
+                    kernel="polynomial", 
+                    degree=2,
+                    tunecontrol=tune.control(sampling="cross", cross=5),
+                    ranges=list(cost=cost_vect)) 
+
+# Build model
+fit_poly <- svm(Class ~ ., 
+                data=df_train, 
+                kernel="polynomial",
+                cost=fit_poly_cv$best.parameters$cost)
+
+# Prediction
+pred_poly_test <- predict(fit_poly, df_test)
+```
+
+### RBF kernel
+```{r}
+# 5-fold crossvalidation to tune the cost 
+set.seed(123)
+fit_radial_cv <- tune(svm,
+                      Class ~ .,
+                      data=df_train,
+                      kernel="radial", 
+                      tunecontrol=tune.control(sampling="cross", cross=5),
+                      ranges=list(cost=cost_vect,
+                                  gamma=gamma_vect)) 
+
+# Build model
+fit_radial <- svm(Class ~ ., 
+                  data=df_train, 
+                  kernel="radial",
+                  cost=fit_radial_cv$best.parameters$cost,
+                  gamma=fit_radial_cv$best.parameters$gamma)
+
+# Prediction
+pred_radial_test <- predict(fit_radial, df_test)
+```
+
+### Data preprocessing for visualization
+```{r}
+# Radial kernel, pick cost with optimal gamma
+df_rad_cv <- fit_radial_cv$performances
+df_opt <- df_rad_cv[1, 1:3]
+for(i in 2:length(cost_vect)){
+  df_rad_cv_in <- df_rad_cv[df_rad_cv$cost == cost_vect[i], 1:3]
+  df_opt[i, "cost"] <- df_rad_cv_in$cost[df_rad_cv_in$error == min(df_rad_cv_in$error)]
+  df_opt[i, "gamma"] <- df_rad_cv_in$gamma[df_rad_cv_in$error == min(df_rad_cv_in$error)]
+  df_opt[i, "error"] <- df_rad_cv_in$error[df_rad_cv_in$error == min(df_rad_cv_in$error)]
+}
+
+# Tidy dataframe
+df_cv <- data.frame(cost=cost_vect,
+                    linear_cv_error=fit_lin_cv$performances$error,
+                    poly_cv_error=fit_poly_cv$performances$error,
+                    radial_cv_error=df_opt$error)
+df_cv <- gather(df_cv, key=cost)
+names(df_cv) <- c("cost", "model", "cv_error")
+
+rm(df_rad_cv, df_rad_cv_in, i)
+```
+
+### Visualization
+```{r}
+ggplot(data=df_cv, aes(x=cost, y=cv_error, color=model)) +
+  geom_point(size=0.9) + 
+  geom_line() +
+  ggtitle("Plot III: Crossvalidation - Cost vs. Error") +
+  scale_colour_manual(values=c("black","darkred","darkgrey")) +
+  ylab("Cross-validation error") +
+  xlab("Cost (for radial kernel with optimal gamma)") +
+  theme_bw()
+```
+
+The above plot shows the cross-validation error rate compared with the cost parameter. For the radial kernel the optimal $gamma$ value is used. 
 
 6. What is the best model in terms of testing accuracy? How does your final model compare with a naive classifier that predicts the most common class (3) on all points?
 
-*Hint:* This is a moderate-sized dataset, but keep in mind that computation will always be a limiting factor when tuning machine learning algorithms. For timing reference, attempting 40 combinations of `cost` and `gamma` using an RBF kernel on the training dataset took about 15 minutes to tune on a recent Macbook. The other kernels were much faster, e.g. linear should be done in only a few minutes.
+### Testing
+```{r}
+# Confustion matrix (testing)
+conf_lin <- confusionMatrix(pred_lin_test, df_test$Class)
+conf_poly <- confusionMatrix(pred_poly_test, df_test$Class)
+conf_radial <- confusionMatrix(pred_radial_test, df_test$Class)
 
+# Output table
+pander(data.frame("Linear_accuracy"=conf_lin$overall[1],
+                  "Poly_accuracy"=conf_poly$overall[1],
+                  "Radial_accuracy"=conf_radial$overall[1]))
+```
+
+I looks like the linear as well as radial model achieve very high accuracy rates on the test data. The radial model appears to beat the linear model by a few decimal points. However, taking the tuning time for this relativly small dataset into account, the linear kernel would be the prefered choice for modelling on bigger data. 
+
+### Naive classifier accuracy
+Building a majority class naive classifier. The result is the same as the model build in part 2 above.
+```{r}
+pred_base <- rep(3, nrow(df_test))
+cat('Accuracy: ', 1- classError(pred_base, df_test$Class)$errorRate)
+```
+
+All SVM model perform better than the naive classifier (most common class model). The recommended model for this data set is a SVM with radial kernel, for larger data with similar characteristics a model with a linear kernel might be a good choice. 
 
 # Problem 2: Return of the Bayesian Hierarchical Model
 
