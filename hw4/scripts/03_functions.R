@@ -5,7 +5,7 @@
 if (any(search() %in% "projEnvironment")) detach("projEnvironment")
 projEnvironment <- new.env()
 
-# function to scale a column vector between 0 and 1
+# Scale a vector between zero and one
 projEnvironment$scale <- function(x){
   (x - min(x)) / (max(x) - min(x))
 }
