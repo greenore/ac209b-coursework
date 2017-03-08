@@ -418,7 +418,7 @@ pander(conf_mat_test$table)
 pander(conf_mat_test$overall)
 ```
 
-The above table shows that the overall accuracy is at `R sprintf("%.1f", conf_mat_test$overall[1] * 100)`%. However, the
+The above table shows that the overall accuracy is at `r sprintf("%.1f", conf_mat_test$overall[1] * 100)`%. However, the
 the model always predicts no as the response.
 
 ###	(b) Unpooled Model
@@ -459,7 +459,7 @@ pander(conf_mat_test$table)
 pander(conf_mat_test$overall)
 ```
 
-The above table shows that the overall accuracy for the unpooled model is at `R sprintf("%.1f", conf_mat_test$overall[1] * 100)`%. That means that the model performs similarly well to the pooled model. However, the model performce better looking at the prediction were it no longer always predicts *No* as the response.
+The above table shows that the overall accuracy for the unpooled model is at `r sprintf("%.1f", conf_mat_test$overall[1] * 100)`%. That means that the model performs similarly well to the pooled model. However, the model performce better looking at the prediction were it no longer always predicts *No* as the response.
 
 ###	(c) Bayesian Hierarchical Logistic Model
 A Bayesian hierarchical logistic regression model with `district` as the grouping variable. Make sure that both coefficients of the linear predictor are assumed to vary by `district` in the model specification. Describe briefly in words how the results of this model are different from the pooled and unpooled models of parts (a) and (b).
@@ -543,13 +543,11 @@ ggplot(df_coeff, aes(x=as.numeric(as.character(districts)))) +
 The vertical axis is set between -1.5 and 1.5. The reason for this is that coefficients with larger values have no practical significance and disrupt the visibilty. 
 
 ###	(b) Short summary
-Write a short summary (300 words or less) that interprets the graph from part (a). Pay particular attention to the relationship between the coefficients within each district, and how or whether the number of observations within each district plays a role in the relationship. You may speculate on the reasons for what you are seeing. 
-
 As can be seen in the plot above, the pooled model has by design no variabilty in the coefficient value for living children over the different districts. However, the hierachical bayes as well as the unpooled model vary in their coefficiant value (positive as well as negative) over the different districts.
 
-The coefficiants from the hierarchical model appear to be more stable over the different districts compared to the coefficiants from the unpooled model. Furthermore, the number of observations in a district appear to have an effect on the variability of the unpooled as well as the bayesian hierarchical coefficients. The smaller the number the further away from the baseline (pooled). This could indicate some *overfitting* due to the small sample size. 
+The coefficiants from the hierarchical model appear to be more stable over the different districts compared to the coefficiants from the unpooled model. Furthermore, the number of observations in a district appear to have an effect on the variability of the unpooled coefficients. The smaller the number the further away from the baseline (pooled). This could indicate some *overfitting* due to the small sample per district size. 
 
-Overall the hierarchical bayes appears to be a kind of a compromise between the two models, i.e., in the pooled model all districts have the same coefficient while in the unpooled model the coefficients vary heavily. In comparison to the unpooled model the hierarchichal bayes benefits from shrinkage (see problem 3 below).
+Overall, the hierarchical bayes appears to be a kind of a compromise between the two models, i.e., in the pooled model all districts have the same coefficient while in the unpooled model the coefficients vary heavily.
 
 ## 3. Model shrinkage
 Another benefit of shrinkage is how it affects probability estimates (recall the lucky, drunk friend from lecture whose classical estimate for the probability of guessing correctly was 100%). Extract the estimated probabilities from each model applied to the training data.  That is, for the pooled and unpooled analyses, use the `predict` function applied to the fitted object, using the argument `type="response"`.  For the hierarchical model, the `$theta.pred` component of the fitted model contains the estimated probabilities.
@@ -588,7 +586,7 @@ ggplot(df_pred, aes(x=prediction, fill=model)) +
   ggtitle("Plot V: Predicted probabilities")
 ```
 
-The above plot shows, that the pooled model only has 4 potential values at around 0, 0.3, 0.6 and 1. As was already observed in 2.1 (a) the model is not very good at distinguishing the different classes. The probabilities for the hierarchical bayes as well as the unpooled model are more evenly distributed with 3 visible clusters at 0.3, 0.5, and 0.6. That means that those two models are better at differentiating the classes at the 0.5 probabilty level.
+The above plot shows, that the pooled model only has 4 potential values at around 0, 0.3, 0.6 and 1. As was already observed in 2.1 (a) the model is not very good at distinguishing the different classes. The probabilities for the hierarchical bayes as well as the unpooled model are more evenly distributed with 3 visible clusters at 0.3, 0.5, and 0.6.
 
 ###	(b) Comparing predictions
 Create a scatter plot comparing predicted values from Unpooled and Hierarchical Models, making sure that the scale of the horizontal and vertical axes are the same, and that the plotting region is square rather than rectangular. Include on the plot the line $y=x$ (why do you think this is a useful line to superimpose?).  Briefly interpret the relationship between the probability estimates for these two models.  Are there particular features of the plot that highlight the intended benefits of using a hierarchical model over the unpooled analysis?  Briefly explain.
