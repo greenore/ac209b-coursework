@@ -363,25 +363,240 @@ We're going to continue working with the dataset introduced in Homework 3 about 
 
 In order to focus on the benefits of Hierarchical Modeling we're going to consider a model with only one covariate (and intercept term). 
 
-1. Fit the following three models
+### Load the data
+```{r, message=FALSE}
+# Read data
+df_bang <- data.frame(read_csv("data/dataset_2.txt"))
 
-	(a) Pooled Model: a single logistic regression for `contraceptive_use` as a function of `living.children`.  Do not include `district` information.  You should use the `glm` function to fit this model. Interpret the estimated model.
-	(b) Unpooled Model: a model that instead fits a separate logistic regression for each `district`.  Use the `glm` function to this model.  *Hint*  The separate logistic regression models can be fit using one application of `glm` by having the model formula be `contraceptive_use ~ -1 + living.children * as.factor(district)`.   Explain why this model formula is accomplishing the task of fitting separate models per district.  Examine the summary output of the fitted model.  Briefly explain the reason for many of the `NA` estimates of the coefficients.
-	(c) Bayesian Hierarchical Logistic Model: a Bayesian hierarchical logistic regression model with `district` as the grouping variable.  Use the `MCMChlogit` function in the `MCMCpack` library using arguments similar to the reaction time model in the lecture notes.  Make sure that both coefficients of the linear predictor are assumed to vary by `district` in the model specification.  Describe briefly in words how the results of this model are different from the pooled and unpooled models of parts (a) and (b).
+# Renaming the variables (replace . with _)
+names(df_bang) <- gsub("[.]", "_", names(df_bang))
 
+# Create factor variables
+df_bang$district <- factor(df_bang$district)
 
-2. In class we discussed that one of the benefits of using Bayesian hierarchical models is that it naturally shares information across the groupings. In this case, information is shared across districts. This is generally known as shrinkage. To explore the degree of shrinkage, we are going to compare coefficients across models and districts based on your results from part 1 above.
+# Split data
+set.seed(987)
+sample_id <- sample(1:nrow(df_bang), floor(nrow(df_bang) * 0.85)) 
+df_train <- df_bang[row.names(df_bang) %in% sample_id, ]
+df_test <- df_bang[!row.names(df_bang) %in% sample_id, ]
 
-	(a) Create a single figure that shows the estimated coefficient to `living.children` as a function of district in each of the three models above.  The horizontal axis should be the districts, and the vertical axis should be the estimated coefficient value (generally three estimated coefficients at each district corresponding to the three models).  Make sure that the points plotted for each model are distinct (different colors and/or plotting characters), and that you create a legend identifying the model-specific points on the figure.  You may want to consider adjusting the vertical axis if some estimated coefficients are so large (positively or negatively) that they obscure the general pattern of the bulk of points. Be sure to explain your decision.
+# Create factor variables
+df_train$contraceptive_use <- factor(df_train$contraceptive_use, labels=c("No", "Yes"))
+df_test$contraceptive_use <- factor(df_test$contraceptive_use, labels=c("No", "Yes"))
+
+rm(sample_id, df_bang)
+```
+
+## 1. Fit the following three models
+
+###	(a) Pooled Model
+A single logistic regression for `contraceptive_use` as a function of `living.children`.  Do not include `district` information.  You should use the `glm` function to fit this model. Interpret the estimated model.
+
+#### Model
+```{r}
+set.seed(987)
+fit_pooled <- glm(contraceptive_use ~ living_children,
+                  data=df_train,
+                  family=binomial(link="logit"))
+```
+
+#### Summary
+```{r}
+pander(summary(fit_pooled), add.significance.stars=TRUE)
+```
+
+The above table shows, that in a simple model with only *living children* as the explanatory variable, the calculated association is highly significant. 
+
+#### Prediction
+```{r}
+pred_pooled_train <- ifelse(as.numeric(predict(fit_pooled, df_train, type="response")) >= 0.5, "Yes", "No")
+pred_pooled_train <- factor(pred_pooled_train, levels=c("No", "Yes"))
+pred_pooled_test <- ifelse(as.numeric(predict(fit_pooled, df_test, type="response")) >= 0.5, "Yes", "No")
+pred_pooled_test <- factor(pred_pooled_test, levels=c("No", "Yes"))
+
+conf_mat_test <- confusionMatrix(pred_pooled_test, df_test$contraceptive_use)
+pander(conf_mat_test$table)
+pander(conf_mat_test$overall)
+```
+
+The above table shows that the overall accuracy is at `sprintf("%.1f", conf_mat_test$overall[1] * 100)`%. However, the
+the model always predicts no as the response.
+
+###	(b) Unpooled Model
+A model that instead fits a separate logistic regression for each `district`.  Use the `glm` function to this model.  *Hint*  The separate logistic regression models can be fit using one application of `glm` by having the model formula be `contraceptive_use ~ -1 + living.children * as.factor(district)`.   Explain why this model formula is accomplishing the task of fitting separate models per district.  Examine the summary output of the fitted model.  Briefly explain the reason for many of the `NA` estimates of the coefficients.
+
+The formula `contraceptive_use ~ -1 + living.children * as.factor(district)` creates an interaction term between each district and living children. That means that each coefficient of the interaction terms represents an individual model for every individual district. The -1 term ensures that no intercept is beeing fitted.
+
+#### Model
+```{r, warning=FALSE}
+set.seed(987)
+fit_unpooled <- glm(contraceptive_use ~ -1 + living_children * district,
+                  data=df_train,
+                  family=binomial(link="logit"))
+
+```
+
+#### Summary (Of significant values)
+```{r}
+sum_unpooled <- summary(fit_unpooled)$coefficients
+pander(sum_unpooled[sum_unpooled[, 4] <= 0.1, ])
+```
+
+The above table shows, that for the unpooled model not all coefficients for the different districts are statistically significant. Nevertheless, the model indicates, that the variable *living children* has a different impacts depending on the district.
+
+#### Prediction
+```{r, warning=FALSE}
+pred_unpooled_train <- ifelse(as.numeric(predict(fit_unpooled, df_train, type="response")) >= 0.5, "Yes", "No")
+pred_unpooled_train <- factor(pred_unpooled_train, levels=c("No", "Yes"))
+pred_unpooled_test <- ifelse(as.numeric(predict(fit_unpooled, df_test, type="response")) >= 0.5, "Yes", "No")
+pred_unpooled_test <- factor(pred_unpooled_test, levels=c("No", "Yes"))
+
+conf_mat_test <- confusionMatrix(pred_unpooled_test, df_test$contraceptive_use)
+pander(conf_mat_test$table)
+pander(conf_mat_test$overall)
+```
+
+The above table shows that the overall accuracy for the unpooled model is at `sprintf("%.1f", conf_mat_test$overall[1] * 100)`%. That means that the model performs similarly well to the pooled model. However, the model performce better looking at the prediction were it no longer always predicts *No* as the response.
+
+###	(c) Bayesian Hierarchical Logistic Model
+A Bayesian hierarchical logistic regression model with `district` as the grouping variable. Make sure that both coefficients of the linear predictor are assumed to vary by `district` in the model specification. Describe briefly in words how the results of this model are different from the pooled and unpooled models of parts (a) and (b).
+
+#### Model
+```{r}
+# Prepare
+df_train2 <- df_train; df_test2 <- df_test
+df_train2$contraceptive_use <- as.numeric(df_train2$contraceptive_use) - 1
+df_test2$contraceptive_use <- as.numeric(df_test2$contraceptive_use) - 1
+
+# Model
+set.seed(987)
+fit_hierarchical <- MCMChlogit(fixed=contraceptive_use ~ living_children,
+                               random= ~living_children, group="district",
+                               data=df_train2, r=2, R=diag(c(1, 0.1)), burnin=5000, mcmc=10000,
+                               thin=1, verbose=1, beta.start=NA, sigma2.start=NA,
+                               Vb.start=NA, FixOD=1, mubeta=c(0,0), Vbeta=10000,
+                               nu=0.001, delta=0.001)
+```
+
+In the glm case, (a) and (b), we did maximize the likelihood function $p(y|β_0,β_1,x)$. That is we found the weights $β_0, β_1$ that maximize how likely the observed data is. In the case of the bayesian hierarchical logistic regression, the starting point is an initial belief about the distribution of $p(β_0,β_1)$. Then the posterior $p(β_0,β_1|x,y)∝p(y|β_0,β_1,x)p(β_0,β_1)$ which is the updated belief about the weights given evidence, is proportional to our prior (initial belief) times the likelihood. This gives us a distribution over the weights. That means that the bayesian model returns the distributions of the intercept and living children for each district as well as the estimated probability for each seperate district model. The pooled and unpooled model do not do this. 
+
+## 2. Benefits of hierarchical models
+In class we discussed that one of the benefits of using Bayesian hierarchical models is that it naturally shares information across the groupings. In this case, information is shared across districts. This is generally known as shrinkage. To explore the degree of shrinkage, we are going to compare coefficients across models and districts based on your results from part 1 above.
+
+###	(a) Single figure for living children
+Create a single figure that shows the estimated coefficient to `living.children` as a function of district in each of the three models above.  The horizontal axis should be the districts, and the vertical axis should be the estimated coefficient value (generally three estimated coefficients at each district corresponding to the three models).  Make sure that the points plotted for each model are distinct (different colors and/or plotting characters), and that you create a legend identifying the model-specific points on the figure.  You may want to consider adjusting the vertical axis if some estimated coefficients are so large (positively or negatively) that they obscure the general pattern of the bulk of points. Be sure to explain your decision.
+
+```{r}
+# Districts
+districts <- unique(df_train$district)
+n_districts <- length(districts)
+
+# Pooled coefficients
+coeff_pooled <- rep(fit_pooled$coefficients[2], n_districts)
+
+# Unpooled coeffficents
+coeff_unpooled_all <- fit_unpooled$coefficient
+n_coeff_unpooled <- length(coeff_unpooled_all)
+coeff_unpooled <- coeff_unpooled_all[(n_coeff_unpooled - n_districts + 2):n_coeff_unpooled]
+coeff_unpooled <- c(0, coeff_unpooled) + coeff_unpooled_all[1]
+
+# Bayesian coefficients
+coeff_hierarchical_all <- summary(fit_hierarchical$mcmc)$statistics[, 1]
+n_coeff_hierarchical <- length(coeff_hierarchical_all)
+coeff_hierarchical <- coeff_hierarchical_all[(n_coeff_hierarchical -
+                                                5 - n_districts):(n_coeff_hierarchical - 6)]
+
+# Dataframe
+df_coeff <- data.frame(districts=districts,
+                       observations=as.numeric(table(df_train$district)),
+                       pooled=coeff_pooled,
+                       unpooled=coeff_unpooled,
+                       hierarchical=coeff_hierarchical)
+rm(districts, coeff_pooled, coeff_unpooled, coeff_hierarchical, n_districts,
+   n_coeff_unpooled, n_coeff_hierarchical, sum_unpooled, coeff_hierarchical_all,
+   coeff_unpooled_all, conf_mat_test)
+```
+
+#### Plot
+```{r, warning=FALSE}
+ggplot(df_coeff, aes(districts)) +
+  geom_point(aes(y=unpooled, color="unpooled", size = observations)) + 
+  geom_point(aes(y=hierarchical, color="hierarchical", size=observations)) +
+  geom_point(aes(y=pooled, color="pooled")) +
+  scale_colour_manual(values=c("black","darkred","darkgrey")) +
+  ylab("Coefficient value") +
+  xlab("District number") +
+  ggtitle("Estimated coefficient as a function of district") +
+  theme_bw() +
+  ylim(c(-1.5, 1.5))
+```
+
+The vertical axis is set between -1.5 and 1.5. The reason for this is that coefficients with larger values have no practical significance and disrupt the visibilty. 
+
+###	(b) Short summary
+Write a short summary (300 words or less) that interprets the graph from part (a).  Pay particular attention to the relationship between the coefficients within each district, and how or whether the number of observations within each district plays a role in the relationship. You may speculate on the reasons for what you are seeing. 
+
+As can be seen in the plot above, the pooled model has by design no variabilty in the coefficient value for living children over the different districts. However, the hierachical bayes as well as the unpooled model vary in there coefficiant value (positive as well as negative) over the different districts. The coefficiants from the hierarchical model appear to be more stable over the different districts compared to the coefficiants from the unpooled model. Furthermore, the number of observations in a district appear to have an effect on the variability of the unpooled as well as the bayesian hierarchical coefficients. The smaller there number the further away from the baseline (pooled). This could indicate some *overfitting* due to the small sample size. 
+
+## 3. Model shrinkage
+Another benefit of shrinkage is how it affects probability estimates (recall the lucky, drunk friend from lecture whose classical estimate for the probability of guessing correctly was 100%). Extract the estimated probabilities from each model applied to the training data.  That is, for the pooled and unpooled analyses, use the `predict` function applied to the fitted object, using the argument `type="response"`.  For the hierarchical model, the `$theta.pred` component of the fitted model contains the estimated probabilities.
 	
-	(b) Write a short summary (300 words or less) that interprets the graph from part (a).  Pay particular attention to the relationship between the coefficients within each district, and how or whether the number of observations within each district plays a role in the relationship.  You may speculate on the reasons for what you are seeing. 
+###	(a) Probabilty estimates
+Plot histograms of the vectors of probability estimates for each model separately.  Make sure you standardize the horizontal axis so that the scales are the same.  How does the distribution of estimated probabilities compare across the three models?
+
+```{r, warning=FALSE}
+# Predictions
+pred_pooled <- predict(fit_pooled, df_train, type='response')
+pred_unpooled <- predict(fit_unpooled, df_train, type='response')
+
+# Prepare
+n_obs <- nrow(df_train)
+model_type <- c(rep('pooled', n_obs), rep('unpooled', n_obs), rep('hierarchical', n_obs))
+
+# Probabilities
+model_predictions <- c(scale(pred_pooled),
+                       scale(pred_unpooled),
+                       scale(fit_hierarchical$theta.pred))
+
+# Dataframe
+df_pred <- data.frame(prediction=model_predictions, model=model_type)
+```
+
+```{r}
+# create hisotgram of probabilities from each model 
+ggplot(df_pred, aes(x=prediction, fill=model)) +
+  geom_histogram(alpha=0.8, color="white", bins=40, position="identity") +
+  scale_fill_manual(values = c("black","darkred","darkgrey")) +
+  theme_bw() +
+  ylab("Count") +
+  xlab("Pr(Contraceptive usage)") +
+  ggtitle("Predicted probabilities")
+```
 
 
-3. Another benefit of shrinkage is how it affects probability estimates (recall the lucky, drunk friend from lecture whose classical estimate for the probability of guessing correctly was 100%). Extract the estimated probabilities from each model applied to the training data.  That is, for the pooled and unpooled analyses, use the `predict` function applied to the fitted object, using the argument `type="response"`.  For the hierarchical model, the `$theta.pred` component of the fitted model contains the estimated probabilities.
-	
-	(a) Plot histograms of the vectors of probability estimates for each model separately.  Make sure you standardize the horizontal axis so that the scales are the same.  How does the distribution of estimated probabilities compare across the three models?
-	(b) Create a scatter plot comparing predicted values from Unpooled and Hierarchical Models, making sure that the scale of the horizontal and vertical axes are the same, and that the plotting region is square rather than rectangular. Include on the plot the line $y=x$ (why do you think this is a useful line to superimpose?).  Briefly interpret the relationship between the probability estimates for these two models.  Are there particular features of the plot that highlight the intended benefits of using a hierarchical model over the unpooled analysis?  Briefly explain.
+The above plot shows, that the pooled model only has 4 potential values at around 0, 0.3, 0.6 and 1. As was already observed in 2.1 (a) the model is not very good at distinguishing the different classes. The probabilities for the hierarchical bayes as well as the unpooled model are more evenly distributed with 3 clusters at 0.3, 0.5, and 0.6. They are both much better at differentiating the classes at the 0.5 probabilty level.
 
+###	(b) Comparing predictions
+Create a scatter plot comparing predicted values from Unpooled and Hierarchical Models, making sure that the scale of the horizontal and vertical axes are the same, and that the plotting region is square rather than rectangular. Include on the plot the line $y=x$ (why do you think this is a useful line to superimpose?).  Briefly interpret the relationship between the probability estimates for these two models.  Are there particular features of the plot that highlight the intended benefits of using a hierarchical model over the unpooled analysis?  Briefly explain.
+
+```{r}
+# Dataframe
+df_mod <- data.frame(district=df_train$district,
+                     unpooled=scale(pred_unpooled),
+                     hierarchical=scale(fit_hierarchical$theta.pred))
+
+df_mod <- merge(df_mod, data.frame(table(df_train$district)), by.x="district", by.y="Var1")
+
+# Plot
+ggplot(df_mod, aes(x=hierarchical, y=unpooled)) +
+  geom_abline(intercept=0, slope=1, color="darkred", size=1) +
+  geom_point(size=df_mod$Freq/20) +
+  coord_fixed() +
+  theme_bw() +
+  ggtitle("Hierarchical vs. Unpooled Model")
+```
+
+The above plot confirms the already seen picture in the histogram, that the 2 probabilties are positivly correlated with each other. The 45-degree line helps distinguishing the relationship between the two variables. That means that it shows where the two models differ in there predictions and it shows if there relationship is linear. Furthermore, the above plot shows, that the hierarchical model is less confident for values where the sample size is small while the unpooled model classifies them very often as either one or zero. The reason for this is that the hierarchical model incorporats the *prior* of the pooled model, which helps prevent it from *overfitting* on district's data. In other words, as the sample size decreases, the average is weighted more heavily toward the sample mean.
 
 # Problem 3: AWS Preparation
 
