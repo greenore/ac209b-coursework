@@ -31,8 +31,6 @@ knitr::opts_chunk$set(warning=FALSE, message=FALSE,
 ```
 
 # Problem 1: Celestial Object Classification
-SVMs are computationally intensive, much more so than other methods we've used in the course. Expect run times for your analyses to be much larger than before. Several SVM packages are available, we recommend using the `e1071` library, though you're free to use whatever package you feel comfortable with -- we'll provide extra hints for the `svm` function from this package. 
-
 In this problem, the task is to classify a celestial object into one of 4 categories using photometric measurements recorded about the object. The training and testing datasets are provided in the `dataset_1_train.txt` and `dataset_1_test.txt` respectively. Overall, there are a total of 1,379 celestial objects described by 61 attributes. The last column contains the object category we wish to predict, `Class`.
 
 ### Initialize
@@ -48,8 +46,6 @@ source("scripts/01_init.R")                   # Helper functions to load package
 source("scripts/02_packages.R")               # Load all necessary packages
 source("scripts/03_functions.R")              # Load project specific functions
 ```
-
-First, ensure that the that `Class` is a factor (quantitative values). These should be object categories and not integer values -- use `as.factor` if needed. 
 
 ### Load the data
 ```{r, message=FALSE}
@@ -149,11 +145,11 @@ ggplot(data=df_err, aes(x=gamma_values, y=error, color=data)) +
   theme_bw()
 ```
 
-The above plot shows, that intially, when the $gamma$ value is increased, the error rate on the training as well as the test data decreases. However, after a *threshold* value where $gamma$ equals 0.007 the test error starts to increase up to a plateau of arround 30% while the training error continuous to decend until it reaches 0%. That means that after the *threshold* $gamma$ the svm starts overfitting the data. 
+The above plot shows that intially, when the $gamma$ value is increased, the error rate on the training as well as the test data decreases. However, after a *threshold* value where $gamma$ equals 0.007 the test error starts to increase up to a plateau of arround 30% while the training error continuous to decend until it reaches 0%. That means that after the *threshold* $gamma$ the svm starts overfitting the data. 
 
 Technically speaking, Gamma is the free parameter of the Gaussian radial basis function (RBF).
 
-$K(x_i, x_j) = exp(-gamma ||x_i-x_j||^2, gamma >0$
+$$K(x_i, x_j) = exp(-gamma ||x_i-x_j||^2, gamma >0$$
 
 A small $gamma$ means a Gaussian with a large variance so the influence of $x_j$ is more, i.e. if $x_j$ is a support vector, a small gamma implies the class of this support vector will have influence on deciding the class of the vector $x_i$ even if the distance between them is large. If gamma is large, then variance is small implying the support vector does not have wide-spread influence, i.e., a large $gamma$ leads to high bias and low variance models, and vice-versa.
 
@@ -330,7 +326,8 @@ ggplot(data=df_cv, aes(x=cost, y=cv_error, color=model)) +
 
 The above plot shows the cross-validation error rate compared with the cost parameter. For the radial kernel the optimal $gamma$ value is used. 
 
-6. What is the best model in terms of testing accuracy? How does your final model compare with a naive classifier that predicts the most common class (3) on all points?
+## 6. Model accuracy
+What is the best model in terms of testing accuracy? How does your final model compare with a naive classifier that predicts the most common class (3) on all points?
 
 ### Testing
 ```{r}
@@ -385,7 +382,7 @@ df_test$contraceptive_use <- factor(df_test$contraceptive_use, labels=c("No", "Y
 rm(sample_id, df_bang)
 ```
 
-## 1. Fit the following three models
+## 1. Fit three models
 
 ###	(a) Pooled Model
 A single logistic regression for `contraceptive_use` as a function of `living.children`.  Do not include `district` information.  You should use the `glm` function to fit this model. Interpret the estimated model.
@@ -531,7 +528,7 @@ rm(districts, coeff_pooled, coeff_unpooled, coeff_hierarchical, n_districts,
 
 #### Plot
 ```{r, warning=FALSE}
-ggplot(df_coeff, aes(districts)) +
+ggplot(df_coeff, aes(x=as.numeric(as.character(districts)))) +
   geom_point(aes(y=unpooled, color="unpooled", size = observations)) + 
   geom_point(aes(y=hierarchical, color="hierarchical", size=observations)) +
   geom_point(aes(y=pooled, color="pooled")) +
