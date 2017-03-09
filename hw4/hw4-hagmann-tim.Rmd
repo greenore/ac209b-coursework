@@ -465,7 +465,7 @@ The above table shows that the overall accuracy for the unpooled model is at `r 
 A Bayesian hierarchical logistic regression model with `district` as the grouping variable. Make sure that both coefficients of the linear predictor are assumed to vary by `district` in the model specification. Describe briefly in words how the results of this model are different from the pooled and unpooled models of parts (a) and (b).
 
 #### Model
-```{r, warning=FALSE, include=FALSE}
+```{r, warning=FALSE, include=TRUE}
 # Prepare
 df_train2 <- df_train; df_test2 <- df_test
 df_train2$contraceptive_use <- as.numeric(df_train2$contraceptive_use) - 1
