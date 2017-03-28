@@ -4,14 +4,14 @@ title: |
 author: "Tim Hagmann"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output:
-  pdf_document:
-    toc: yes
   html_document:
     css: css/styles.css
     highlight: tango
     theme: flatly
     toc: yes
     toc_float: yes
+  pdf_document:
+    toc: yes
   word_document:
     toc: yes
 subtitle: |
@@ -614,16 +614,3 @@ ggplot(df_mod, aes(x=hierarchical, y=unpooled)) +
 ```
 
 The above plot confirms the already seen picture in the histogram, that the 2 probabilties are positivly correlated with each other. The 45-degree line helps distinguishing the relationship between the two variables. That means that it shows where the two models differ in there predictions and it shows if there relationship is linear. Furthermore, the above plot shows, that the hierarchical model is less confident for values where the sample size is small while the unpooled model classifies them very often as either one or zero. This supports the observation made in 2.2 (b). The reason for this is that the hierarchical model incorporats the *prior* of the pooled model, which helps prevent it from *overfitting* on district's data (shrinkage). In other words, as the sample size decreases, the average is weighted more heavily toward the sample mean.
-
-# Problem 3: AWS Preparation
-In prepartion for the upcoming Spark and Deep Learning modules, submit your AWS
-account information. This should have been created in Homework 0. We need specifically:
-
-* The email address associated with your AWS account
-* The email address associated with your Harvard ID, if different from above
-* Your AWS ID. This should be a 10 digit number. ([Instructions](http://docs.aws.amazon.com/IAM/latest/UserGuide/console_account-alias.html))
-
-We need this information to enable GPU capable compute instances.
-
-```{r child = 'credentials/aws_account_info.Rmd'}
-```
