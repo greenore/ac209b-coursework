@@ -1,0 +1,573 @@
+---
+title: "CS109B Lab 4: Support Vector Machines"
+output: 
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+---
+
+
+
+Support Vector Machines in R
+============================
+
+There are two main implementations: `e1071::svm` provides an R
+interface to `libsvm`, and `kernlab::ksvm` provides a
+flexible implementation that can be extended at the R level. For the
+homework we recommend using the `e1071` implementation. In real life
+you should experiment and choose the approach you are most comfortable
+with. 
+
+
+A simple first example
+======================
+
+The `iris` data is often used for classification examples, and is a
+good place to start given it's relative simplicity.
+
+
+Let's begin by classifying observations as `setosa` vs `other`.
+
+```{r}
+iris2 <- transform(iris, Species = factor(Species == "setosa",
+                                          labels = c("other", "setosa")))
+```
+
+As usual, it's a good idea to start by plotting the data.
+
+```{r}
+library(ggplot2)
+library(GGally)
+
+ggpairs(iris2, mapping = aes(color = Species))
+```
+
+We can see that `Species` separates pretty cleanly along different
+pairs of attributes. Let's start by considering just `Sepal.Width` and
+`Sepal.Length`. 
+
+```{r}
+ggplot(iris2,
+       mapping = aes(x = Sepal.Width, y = Sepal.Length)) +
+    geom_point(mapping = aes(color = Species)) 
+```
+
+We'll start with a simple linear kernel to help us build up an intuition
+for how SVM works.
+
+```{r}
+library(e1071)
+
+m <- svm(Species ~ Sepal.Width + Sepal.Length,
+         data = iris2,
+         kernel = "linear")
+
+m
+```
+
+The `svm` function returns a list of model statistics of class `svm`.
+There are a few methods available, including `plot` and `predict`:
+
+```{r}
+sapply(class(m), function(x) methods(class =x))
+```
+
+The `plot` methods gives us a visualization of the observed and
+predicted class.
+
+```{r}
+plot(m, iris2, formula = Sepal.Length ~ Sepal.Width)
+```
+
+We can also extract named components of the model to do our own
+plotting or other post-processing.
+
+```{r}
+names(m)
+```
+
+For example, we can augment our original scatter plot by 
+highlighting the support vectors:
+
+```{r}
+iris2$support.vector <- FALSE
+iris2$support.vector[m$index] <- TRUE
+
+ggplot(iris2,
+       mapping = aes(x = Sepal.Width,
+                     y = Sepal.Length,
+                     shape = Species,
+                     color = support.vector)) +
+    geom_point()
+```
+
+We can use the predict method to create more interesting
+visualizations showing the decision boundary. For that 
+we need to make predictions over the grid spanned by 
+the observed data.
+
+```{r}
+predGrid <- with(iris2,
+                 expand.grid(Sepal.Length = seq(min(Sepal.Length),
+                                                max(Sepal.Length),
+                                                length.out = 200),
+                             Sepal.Width = seq(min(Sepal.Width),
+                                               max(Sepal.Width),
+                                               length.out = 200)))
+```
+
+Next make predictions for each value in the grid:
+
+```{r}
+predGrid$predicted <- predict(m, predGrid)
+```
+
+and plot the observed and predicted values.
+
+```{r}
+p <- ggplot(predGrid,
+            mapping = aes(x = Sepal.Width,
+                          y = Sepal.Length)) +
+    geom_raster(mapping = aes(fill = predicted),
+                alpha = 0.2) +
+    geom_point(mapping = aes(shape = Species,
+                             color = support.vector),
+               data = iris2)
+p
+```
+
+We can use the predict method to evaluate the classification 
+accuracy.
+
+```{r}
+table(iris2$Species, predict(m, iris2))
+```
+
+The cost parameter
+==================
+
+As we saw in the previous example, the decision boundary need not
+classify every observation correctly. The SVM algorithm actually
+selected a decision boundary that left one observation on the wrong
+side, despite the availability of decision boundaries that correctly
+classify all the points. This is because the boundary that correctly
+classifies all the points passes closer (on average) to other points
+in the support vector.
+
+We can adjust the cost of this constraint violation through the `cost`
+argument to the `svm` function. This allows us to trade off bias and
+variance to select a suitable decision boundary.
+
+```{r, fig.show='hold'}
+## svm with high cost parameter
+m1 <- svm(Species ~ Sepal.Width + Sepal.Length,
+         data = iris2,
+         kernel = "linear",
+         cost = 20)
+
+## predictions on the grid established earlier
+predGrid$predicted1 <- predict(m1, predGrid)
+
+## plot
+p1 <- ggplot(predGrid,
+            mapping = aes(x = Sepal.Width, y = Sepal.Length)) +
+    geom_raster(mapping = aes(fill = predicted1),
+                alpha = 0.2) +
+    geom_point(mapping = aes(shape = Species, color = support.vector),
+               data = iris2)
+
+## comparison of predictions with different cost parameters
+p + ggtitle("Cost = 1 (default)")
+p1 + ggtitle("Cost = 20")
+```
+
+By setting a high cost we're saying that we really want to avoid
+violating boundary constraints, even at the cost of leaving other
+points in the support vector closer to the decision boundary. We can
+think of this as fitting the model more closely to the data, at the
+possible expense of generalizability. 
+
+
+A more complicated example
+==========================
+
+As the classification task becomes more complicated we will usually
+have to switch to a different kernel. Suppose now that we want to
+classify `versicolor` vs `other`, using `Petal.Length` and
+`Petal.Width`.
+
+A simple plot of the data reveals the problem we'll face:
+
+```{r}
+iris2 <- transform(iris,
+                   Species = factor(Species == "versicolor",
+                                    labels = c("other", "versicolor")))
+
+ggplot(iris2,
+       mapping = aes(x = Petal.Width,
+                     y = Petal.Length,
+                     color = Species)) +
+    geom_point()
+
+```
+
+Since `versicolor` is surrounded on both sides by `other`, we won't
+have much success with a linear kernel.
+
+```{r}
+m2 <- svm(Species ~ Petal.Length + Petal.Width,
+          data = iris2,
+          kernel = "linear")
+plot(m2,
+     data = iris2,
+     formula = Petal.Width ~ Petal.Length)
+```
+
+For this type of classification we can switch to a `radial` kernel.
+
+```{r}
+m3 <- svm(Species ~ Petal.Width + Petal.Length,
+         data = iris2,
+         kernel = "radial")
+```
+
+The radial kernel gives much better classification in this scenario:
+
+```{r}
+iris2$support.vector <- FALSE
+iris2$support.vector[m3$index] <- TRUE
+
+predGrid <- with(iris2,
+                 expand.grid(Petal.Length = seq(min(Petal.Length),
+                                                max(Petal.Length),
+                                                length.out = 200),
+                             Petal.Width = seq(min(Petal.Width),
+                                               max(Petal.Width),
+                                               length.out = 200)))
+predGrid$predicted <- predict(m3, predGrid)
+
+p <- ggplot(predGrid,
+            mapping = aes(x = Petal.Width,
+                          y = Petal.Length)) +
+    geom_raster(mapping = aes(fill = predicted),
+                alpha = 0.2) +
+    geom_point(mapping = aes(shape = Species,
+                             color = support.vector),
+               data = iris2)
+p
+```
+
+The gamma parameter
+===================
+
+For non-linear kernels (such as radial) the bias-variance trade-off
+can be controlled both by the `cost` parameter (as with linear
+kernels) and by the `gamma` parameter (there is no gamma for a linear
+kernel). The kernel maps the observed features to a higher-dimensional
+feature space; the `gamma` parameter controls the "smoothness" of that mapping.
+
+We can see the effect of the `gamma` parameter by varying the value and
+plotting the predictions.
+
+```{r, fig.show='hold'}
+## SVM with gamma = 0.1
+m4 <- svm(Species ~ Petal.Width + Petal.Length,
+         data = iris2,
+         kernel = "radial",
+         gamma = 0.1)
+## SVM with gamma = 10
+m5 <- svm(Species ~ Petal.Width + Petal.Length,
+         data = iris2,
+         kernel = "radial",
+         gamma = 10)
+
+## identify support vectors
+iris2$support.vector1 <- FALSE
+iris2$support.vector1[m4$index] <- TRUE
+iris2$support.vector2 <- FALSE
+iris2$support.vector2[m5$index] <- TRUE
+
+## make predictions on the grid
+predGrid$predicted1 <- predict(m4, predGrid)
+predGrid$predicted2 <- predict(m5, predGrid)
+
+## graph observed and predicted values for each gamma value
+p1 <- ggplot(predGrid,
+             mapping = aes(x = Petal.Width,
+                           y = Petal.Length)) +
+    geom_raster(mapping = aes(fill = predicted1),
+                alpha = 0.2) +
+    geom_point(mapping = aes(shape = Species,
+                             color = support.vector1),
+               data = iris2)
+
+p2 <- ggplot(predGrid,
+             mapping = aes(x = Petal.Width,
+                           y = Petal.Length)) +
+    geom_raster(mapping = aes(fill = predicted2),
+                alpha = 0.2) +
+    geom_point(mapping = aes(shape = Species,
+                             color = support.vector2),
+               data = iris2)
+
+
+p1 + ggtitle("Gamma = 0.1")
+p + ggtitle("Default gamma = 1/ncol(x)")
+p2 + ggtitle("Gama = 10")
+```
+
+Tuning cost and gamma
+=====================
+
+We've seen that we can trade off bias and variance via the `cost` and
+(for non-linear kernels) `gamma`. But what parameter values should we
+choose?
+
+The `e1071` package provides a `tune` function that can be used to
+select appropriate parameters via cross validation.
+
+```{r}
+sp.tune <- tune(svm,
+                Species ~ Petal.Width + Petal.Length,
+                data = iris2,
+                ## NOTE: better to try more combinations,
+                ## limited here to avoid long computation time
+                ranges = list(gamma = seq(2, 30, by = 2), 
+                              cost = seq(2, 30, by = 2)))
+
+sp.tune                
+```
+
+
+There is a`plot` method that you can use to visualize the
+performance of your SVM as a function of the tuning parameters:
+
+```{r}
+plot(sp.tune)
+```
+
+but I don't really like that way of visualizing performance. 
+Better to do the plotting yourself:
+
+```{r}
+names(sp.tune)
+str(sp.tune$performances)
+```
+
+```{r}
+ggplot(sp.tune$performances, 
+       mapping = aes(x = gamma, y = error)) + 
+  geom_line() + 
+  facet_wrap(~cost, labeller = label_both)
+```
+
+The `tune` function also returns the best model (among other things).
+We can use the `best.model` component to predict.
+
+```{r}
+## identify support vectors
+iris2$support.vector <- FALSE
+iris2$support.vector[sp.tune$best.model$index] <- TRUE
+
+## predict using the grid established earlier
+predGrid$predicted <- predict(sp.tune$best.model, predGrid)
+
+## plot
+p <- ggplot(predGrid,
+            mapping = aes(x = Petal.Width,
+                          y = Petal.Length)) +
+    geom_raster(mapping = aes(fill = predicted),
+                alpha = 0.2) +
+    geom_point(mapping = aes(shape = Species,
+                             color = support.vector),
+               data = iris2)
+p
+```
+
+*Note When selecting parameter values via cross-validation you
+should generally hold out a test set to calculate the accuracy of the
+best model identified through cross-validation on the training set. In
+these `iris` examples we skipped that step in the interest of focusing
+on the mechanics of SVM in R.*
+
+More predictors and classes
+===========================
+
+In the examples thus far we've classified only a single binary
+response, using only two features as predictors. 
+
+More than two features
+----------------------
+
+Using only two features made it easy to understand what the algorithm
+does, especially because constructing graphs of the decision boundary
+is easy in the two-predictor case. However, SVM is by no means limited
+to two observed features, and indeed using more features will
+generally improve your classification accuracy. From a practical 
+standpoint there is nothing much to it -- just add the additional 
+features to the right-hand-side of the formula argument to `svm`.
+
+More than two response categories
+---------------------------------
+
+SVM does not generalize to more than two response categories. In
+practice this isn't a huge drawback -- we simply use multiple SVMs,
+each one making a binary classification. This is handled transparently
+by the `svm` function.
+
+Multiple class multiple feature example
+---------------------------------------
+
+Again, from a mechanical perspective not much changes when classifying
+k>2 response categories using more than two features.
+
+```{r}
+m6 <- svm(Species ~ .,
+          data = iris)
+```
+
+Predict works just as before:
+
+```{r}
+table(iris$Species, predict(m6, data = iris))
+```
+
+Since our graphical displays are limited to two dimensions we do need
+to take more care when graphing the predictions. 
+
+*Note that the graph below is somewhat more complicated than I would 
+expect you to do -- the purpose of the code below is to try to give 
+you some insight into what happens when we have more than two response 
+levels and features.*
+
+```{r}
+### establish a grid of prediction grids ###
+
+iris2 <- iris
+
+## calculate cut points for each grid
+slh <- hist(iris2$Sepal.Length, 4, plot = FALSE)
+swh <- hist(iris2$Sepal.Width, 4, plot = FALSE)
+
+iris2$Sepal.Length <- as.numeric(as.character(cut(iris2$Sepal.Length,
+                                                  breaks = slh$breaks,
+                                                  labels = slh$mids,
+                                                  include.lowest = TRUE)))
+iris2$Sepal.Width <- as.numeric(as.character(cut(iris2$Sepal.Width,
+                                                 breaks = swh$breaks,
+                                                 labels = swh$mids,
+                                                 include.lowest = TRUE)))
+
+## construct the grid of prediction grids
+predGrid <- with(iris2,
+                 expand.grid(Petal.Length = seq(min(Petal.Length), 
+                                                max(Petal.Length), 
+                                                length.out = 20),
+                             Petal.Width = seq(min(Petal.Width), 
+                                               max(Petal.Width), 
+                                               length.out = 20),
+                             Sepal.Length = unique(Sepal.Length),
+                             Sepal.Width = unique(Sepal.Width)))
+
+### make predictions ###
+predGrid$predicted <- predict(m6, predGrid)
+
+### plot petal width vs petal length for each sepal length X width grid ###
+p <- ggplot(predGrid,
+            mapping = aes(x = Petal.Width, y = Petal.Length)) +
+    geom_raster(mapping = aes(fill = predicted),
+                alpha = 0.2) +
+    geom_point(mapping = aes(color = Species),
+               data = iris2) +
+    facet_grid(Sepal.Length ~ Sepal.Width, labeller = label_both)
+p
+```
+
+
+Your turn: Detecting forgeries
+============================
+
+The UC Irvine Machine Learning Repository contains a wealth of
+interesting data sets. The data at
+<https://archive.ics.uci.edu/ml/machine-learning-databases/00267/data_banknote_authentication.txt>
+contains data about the properties of images of real and counterfeit
+bank notes. 
+
+Some documentation is available
+at <https://archive.ics.uci.edu/ml/datasets/banknote+authentication#>.
+Note that there are not headers in the data file: the column names are
+"variance", "skew", "curtosis", "entropy", and "class".
+
+Unfortunately the documentation is a bit sparse -- for now let's
+assume that `class == 0` is real and `class == 1` counterfeit,
+although it could be vice versa. 
+
+Our goal is to classify these images as real or counterfeit.
+
+1. Read the data into R. Ensure that the columns are named correctly
+   and that `class` is a factor.
+
+```{r}
+
+```
+
+2. Split the data into train and test sets.
+
+```{r}
+
+```
+
+3. Visually examine the associations among the features by class.
+
+```{r}
+
+```
+
+4. Predict `class` using only `skew` and `entropy`. 
+  * Plot `skew` vs `entropy`, coloring by `class`. Based on this
+    visualization, what kernel will you use in your SVM?
+
+```{r}
+
+```    
+    
+  * Use the `svm` function to classify banknotes in the training set.
+
+```{r}
+
+```
+
+  * Plot the actual and predicted class in the test data
+
+```{r}
+
+```
+
+  * Generate a confusion matrix using the test data as the criterion.
+  
+```{r}
+
+```
+
+5. Classify banknotes using all available information.
+
+   * Use the `tune` function select optimal `cost` and `gamma`
+parameter values (use all the available features).
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+   * Generate a confusion matrix using the test data as the criterion. 
+
+```{r}
+
+```
+

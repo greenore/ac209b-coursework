@@ -1,0 +1,444 @@
+---
+title: "CS109B Lab 5: Principal Components and Multidimensional Scaling"
+output: 
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+---
+
+
+Principal Components in R
+=========================
+
+The (base R) `stats` package provides two implementations of principal
+components analysis, namely `prcomp` and `princomp`. **`princomp` is
+mostly of historical interest and should not be used**.
+
+Alternative implementations are available in the `psych` and
+`FactoMineR` packages. The `psych::principal` implementation includes
+rotated solutions, conveniences for replacing missing values, and
+utilities for selecting the number of components to retain, among
+other things. The `FactoMineR::PCA` implementation provides nicer plot
+and summary methods among other things.
+
+For our purposes `stats::prcomp` is a fine choice.
+
+
+A "simple" PCA example
+--------------------
+
+We'll start with a fairly typical application of PCA in a social
+science setting, namely to summarize a large number of correlated
+variables. An augmented version of the
+[National Neighborhood Crime Study](http://www.icpsr.umich.edu/icpsrweb/RCMD/studies/27501)
+data is available from the UCI machine learning data base
+at
+<https://archive.ics.uci.edu/ml/machine-learning-databases/communities/>.
+It contains a relatively large number of demographic variables at the
+community level. 
+
+Our goal is to use these demographics variables to predict violent
+crime rates. Principal components analysis gives us two advantages in
+this context; it allows us to summarized the information contained in
+highly correlated or redundant variables, and it makes modeling
+simpler by reducing the number of independent variables. 
+
+### Data import and cleanup
+
+Our first task is to read in the data and clean it up.
+
+```{r}
+## read in the data (note header an na.string arguments)
+crime <- read.csv("https://archive.ics.uci.edu/ml/machine-learning-databases/communities/communities.data",
+                  header = FALSE,
+                  na.string = "?")
+```
+
+Since the data file doesn't include variable names, we will parse them
+out from the documentation.
+
+```{r}
+## read in documentation
+name.info <- readLines("https://archive.ics.uci.edu/ml/machine-learning-databases/communities/communities.names")
+
+## extract variable names from documentation
+crime.names <- gsub("^.* ([0-9A-z]+) .*$",
+                    "\\1",
+                    name.info[grepl("^@attribute ", name.info)])
+
+## Extract variable descriptions from documentation
+crime.info <- data.frame(var.name = crime.names,
+                         var.label = gsub("^--.*: (.*) \\(.*$",
+                                          "\\1",
+                                          name.info[grepl("^-- ", name.info)][-(1:3)]))
+```
+
+Now that we've extracted information from the documentation we can use
+it to name the columns in our data set.
+
+```{r}
+## imformate column names
+names(crime) <- crime.names
+
+## informative row names
+rownames(crime) <- paste(crime$communityname,
+                         crime$state,
+                         sep = ", ")
+```
+
+Finally, there is some missing data that we will wave our hands at and
+ignore for now (this is not a good idea in general).
+
+```{r}
+## check number of rows and columns in the original data
+dim(crime)
+
+## remove features with more than 5 missing values
+crime <- na.omit(crime[ , sapply(crime, function(x) length(x[is.na(x)]) < 5)])
+
+## check how many rows and columns we've lost after excluding missing values
+dim(crime)
+```
+
+### Summarizing/consolidating information via PCA
+
+In lecture we learned the basic mathematical formulation of principal
+components analysis, and gained an intuition about it in terms of
+vectors or planes that maximize variance.
+
+Here is another intuitive way to think about it: The information in
+our crime data set is spread out across the different variables. What
+we want to do is move that information around such that we have the
+most information possible in the first principal component. Then we
+take whatever is left and shift it around so that the most information
+possible is in the second principal component, and so on. This means
+that the first principal component will contain lots of information,
+and the last principal component will contain very little.
+
+We carry out this re-organization of information using the `prcomp`
+function (as noted above there are some alternative implementations
+that you might want to investigate outside of this class).
+
+```{r}
+## reduce to a more manageable number of features
+crime.pca <- prcomp(crime[setdiff(names(crime), 
+                                  c("state",
+                                    "county",
+                                    "comumunity",
+                                    "communityname",
+                                    "fold",
+                                    "ViolentCrimesPerPop"))],
+                    scale = TRUE)
+
+summary(crime.pca)
+```
+
+As seen in the PCA summary above, we started with 100 variables, and
+re-projected it into 100 principal components. The first principal
+component accounts from 25% of the total variance, and the second
+principal component accounts for an additional 17%. By the time we get
+to the last principal component it only accounts for a paltry 0.001%.
+
+So how many principal components is "good enough"? One way to think
+about it is that variables start out with variance of 1, so any
+principal component with variance less than one is less informative
+than the individual variables we started with. This observation leads
+to what is known as the "root one criteria"; simply put, it says to
+take all principal components with variance greater than one.
+
+Another popular method of choosing the number of components is to plot
+the component number against the variance and find the "elbow" of the
+so-called "scree plot".
+
+```{r}
+screeplot(crime.pca, npcs = 50)
+lines(x = 0:50, y = rep(1, 51))
+```
+
+For applications where selecting the right number of principal
+components is important, a "parallel" analysis may be employed to
+identify components with variance larger than expected by chance.
+
+Finally, it is common to plot the first two principal components, with
+additional axes corresponding to the original variables.
+
+```{r}
+rownames(crime.pca$x) <- rownames(crime)
+biplot(crime.pca)
+```
+
+### Characterizing principal components
+
+For purely predictive applications we may not care much about the
+nature of our components, beyond how much variance they account for.
+In other applications it is helpful to characterize that information
+has been captured by each component. This can be done by examining the
+loadings of each variable on a particular component. This information
+is contained in the `rotation` element of the list produced by the
+`prcomp` function. When examining these loadings it is very helpful to
+order them by absolute magnitude. 
+
+```{r}
+## what is PC1?
+PC1 <- crime.pca$rotation[order(abs(crime.pca$rotation[, 1]),
+                                decreasing = TRUE), 1]
+PC1
+```
+
+Since our variable names are somewhat cryptic it will be helpful to
+attach the labels.
+
+```{r}
+PC1 <- merge(crime.info, data.frame(var.name = names(PC1), PC1 = PC1))
+PC1[order(abs(PC1$PC1), decreasing = TRUE), ]
+```
+
+We can apply the same approach to characterize the second component.
+
+```{r}
+## what is PC2?
+PC2 <- crime.pca$rotation[ , 1:2]
+
+PC2 <- merge(crime.info, data.frame(var.name = rownames(PC2), PC2))
+PC2[order(abs(PC2$PC2), decreasing = TRUE), ]
+```
+
+Finally, now that we've obtained our principal components we can use
+them in our models just as we would any other variable.
+
+```{r}
+## predict violent crimes from principal components rather than raw features
+lm.pc <- lm(ViolentCrimesPerPop ~ .,
+            data = data.frame(crime["ViolentCrimesPerPop"],
+                              predict(crime.pca, crime)[, 1:13]))
+summary(lm.pc)
+```
+
+Compare to:
+
+```{r}
+summary(lm.pc)$adj.r.squared
+
+summary(lm(ViolentCrimesPerPop ~ .,
+           data = crime[setdiff(names(crime), 
+                                  c("state",
+                                    "county",
+                                    "comumunity",
+                                    "communityname",
+                                    "fold"))]))$adj.r.squared
+```
+
+Principal components analysis of images
+---------------------------------------
+
+Principal components analysis can be used to compress images, or more
+generally to concentrate the information contained in the pixels of an
+image into a smaller number of components.
+
+There are several excellent image databases useful for learning image
+classification and other techniques. We'll start by downloading and
+extracting one of the CalTech image sets.
+
+```{r}
+download.file("http://www.vision.caltech.edu/Image_Datasets/Caltech101/101_ObjectCategories.tar.gz",
+              "101_ObjectCategories.tar.gz")
+
+untar("101_ObjectCategories.tar.gz")
+
+list.files("101_ObjectCategories/wild_cat",
+           recursive = TRUE,
+           full.names = TRUE)
+```
+
+There are several packages that can be used to read an manipulate
+image data in R. A good starting point is the `imager` package, which
+provides functions for reading, writing, plotting, and manipulating
+images in R. Like most of the image-related packages in R it stores
+images as arrays holding pixel values. For color images there will
+typically be three layers of (red, blue, green) pixels, while grays
+scale images can be represented by a single matrix of pixel values.
+
+The first step is to read the images into R.
+
+```{r}
+## install.packages("imager")
+
+library(imager)
+
+## most images are photographs, there are a  drawing that will throw us off
+## for now we'll just remove it
+file.remove("./101_ObjectCategories/wild_cat/image_0025.jpg")
+
+## read in cat image data
+wild.cats.files <- list.files("./101_ObjectCategories/wild_cat",
+                              full.names = TRUE)
+wild.cats <- lapply(wild.cats.files,
+                    load.image)
+
+## take a look at a few
+for(i in sample(wild.cats, 4)) plot(i)
+```
+
+Next resize the images to a consistent size (this just makes the
+problem simpler).
+
+```{r}
+## min width and height
+min.width <- min(sapply(wild.cats,
+                        function(x) dim(x)[1]))
+min.height <- min(sapply(wild.cats,
+                         function(x) dim(x)[2]))
+
+## make all images the same size
+wild.cats <- lapply(wild.cats,
+                    resize,
+                    size_x = min.width,
+                    size_y = min.height)
+
+for(i in sample(wild.cats, 4)) plot(i)
+```
+
+Then convert to gray scale (again, this just makes the problem
+simpler).
+
+```{r}
+## make all images grayscale (we could use color,
+## this is just a simplification
+
+wild.cats <- lapply(wild.cats, grayscale)
+
+for(i in sample(wild.cats, 4)) plot(i)
+```
+
+Finally, we "flatten" the pixels from each image into a vector. Each
+pixel thus becomes a feature that we will use as an input to a
+principal components analysis.
+
+```{r}
+wild.cats.1d <- do.call(rbind,
+                        lapply(wild.cats, function(x) as.vector(x[, , 1, 1])))
+```
+
+Finally, having prepped the image data as described above we can apply
+principal components analysis to the pixel values.
+
+```{r} 
+wild.cats.prc <- prcomp(wild.cats.1d, scale = TRUE)
+summary(wild.cats.prc)
+```
+
+```{r}
+plot(wild.cats.prc)
+```
+In this case the column names are just pixel positions, so we can't
+meaningfully characterize the components as we did for the crime data.
+We can however reconstruct the images from the principal components,
+which sometimes gives insight into the information each component
+captures.
+
+```{r}
+## what is the first principal component?
+wild.cat.pc1 <- wild.cats.prc$x[, 1, drop = FALSE] %*%
+    t(wild.cats.prc$rotation[, 1, drop = FALSE])
+
+for(i in sample(1:nrow(wild.cat.pc1), 4)) {
+    plot(as.cimg(matrix(wild.cat.pc1[i, ], ncol = min.height)))
+    }
+```
+
+We can use a small number of principal components to capture most of
+the information originally contained in the individual pixel values.
+Reconstructing the images from the principal components allows us to
+visually see how much of the information has been accounted for by K
+principal components.
+
+```{r}
+## reconstruct image with first 10 principal components
+wild.cat.pc10 <- wild.cats.prc$x[, 1:10] %*%
+    t(wild.cats.prc$rotation[, 1:10])
+
+for(i in sample(1:nrow(wild.cat.pc10), 4)) {
+    plot(as.cimg(matrix(wild.cat.pc10[i, ], ncol = min.height)))
+    }
+```
+
+```{r}
+## reconstruct image with first 25 principal components
+wild.cat.pc25 <- wild.cats.prc$x[, 1:25, drop = FALSE] %*%
+    t(wild.cats.prc$rotation[, 1:25, drop = FALSE])
+
+for(i in sample(1:nrow(wild.cat.pc25), 4)) {
+    plot(as.cimg(matrix(wild.cat.pc25[i, ], ncol = min.height)))
+    }
+```
+
+Multi-dimensional Scaling
+=========================
+
+Suppose now that we want to sort images according to similarity. We
+can do pretty well with a principal components analysis, but a more
+natural approach is to use multi-dimensional scaling (implemented in
+`stats::cmdscale`).
+
+```{r}
+cat.dist <- data.frame(file = wild.cats.files,
+                       cmdscale(dist(wild.cats.1d),
+                                k = 2))
+
+rbind(head(cat.dist),
+      tail(cat.dist))
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(cat.dist,
+       mapping = aes(x = X1,
+                     y = X2)) +
+    geom_text(mapping = aes(label = file))
+```
+
+
+Bonus material
+-------------
+
+With a little bit of work we can plot the original images using the
+distance information returned by `cmdscale`.
+
+The approach used here is adapted from
+<http://stackoverflow.com/questions/27637455/display-custom-image-as-geom-point/27641888>
+
+```{r}
+library(grid)
+
+imgs <- lapply(wild.cats, rasterGrob)
+
+ggplot(cat.dist, aes(X1, X2)) +
+    geom_point() +
+       mapply(function(img, xx, yy, ii) {
+          img$name <- ii
+          annotation_custom(img, xmin=xx-.02, xmax=xx+.02, ymin=yy-0.02, ymax=yy+0.02)},
+          imgs, cat.dist$X1, cat.dist$X2, seq_len(nrow(cat.dist)))
+
+```
+
+Your Turn: Use PCA to reduce image dimensionality and classify
+--------------------------------------------------------------
+
+The Caltech 101 object categories images contain not only wild cats,
+but cartoon cats as well. Using both the `wild_cat` images and the
+`garfield` images:
+
+0. remove any black and white images
+1. load the images into R
+2. convert the images to grayscale
+3. resize the images to a consistent size
+4. flatten the pixels for each image into a vector
+5. perform PCA on the flattened pixel values
+6. choose the number of components to retain using some reasonable criteria
+7. use the principal components to classify images as real or cartoon
+   cats
+8. create a confusion matrix to evaluate the accuracy of your classifier
