@@ -26,6 +26,21 @@ projEnvironment$plot.face = function(x,zlim=c(-1,1)) {
         zlim=zlim,axes=FALSE)  
 }
 
+# The following code will help you reformat the output of the `agnes` and `diana`
+# functions in order to apply the presented methods to find the optimal number of clusters:
+projEnvironment$agnes.reformat<-function(x, k){
+  # x: Data matrix or frame, k: Number of clusters
+  x.agnes = agnes(x,method="ward",stand=T)
+  x.cluster = list(cluster=cutree(x.agnes,k=k))
+  return(x.cluster)
+}
+
+projEnvironment$diana.reformat<-function(x, k){
+  # x: Data matrix or frame, k: Number of clusters
+  x.diana = diana(x,stand=T)
+  x.cluster = list(cluster=cutree(x.diana,k=k))
+  return(x.cluster)
+}
 
 attach(projEnvironment)
 rm(projEnvironment)
