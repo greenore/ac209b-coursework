@@ -19,12 +19,18 @@ projEnvironment$rot90 <- function(x, n = 1){
 }
 
 # Plots Face given image vector x
-projEnvironment$plot.face = function(x,zlim=c(-1,1)) {
-  x = pmin(pmax(x,zlim[1]),zlim[2])
-  cols = gray.colors(100)[100:1]
-  image(rot90(matrix(x,nrow=250)[,250:1],3),col=cols,
-        zlim=zlim,axes=FALSE)  
-}
+projEnvironment$plot.face <- function(x, zlim=c(-1, 1), main="") {
+  x <- pmin(pmax(x, zlim[1]), zlim[2])
+  cols <- gray.colors(100)[100:1]
+  img_rot <- rot90(matrix(x, nrow=250)[, 250:1], 3)
+  graphics::image(img_rot,
+                  col=cols,
+                  zlim=zlim,
+                  axes=FALSE)
+  title(main=main, font.main=2)}
+
+
+
 
 # The following code will help you reformat the output of the `agnes` and `diana`
 # functions in order to apply the presented methods to find the optimal number of clusters:
