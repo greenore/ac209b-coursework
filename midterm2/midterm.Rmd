@@ -319,8 +319,11 @@ For the following problem, we will not be using the general information about th
 
 ### Data selection
 ```{r}
-df_train <- df_genes[df_genes$train.test == "Train", 5:length(df_genes)]
-df_test <- df_genes[df_genes$train.test == "Test", 5:length(df_genes)]
+df_train <- df_genes[df_genes$train.test == "Train", c(2, 5:length(df_genes))]
+df_test <- df_genes[df_genes$train.test == "Test", c(2, 5:length(df_genes))]
+
+df_train$all.aml <- as.factor(df_train$all.aml)
+df_test$all.aml <- as.factor(df_test$all.aml)
 ```
 
 The following questions essentially  create a diagnostic tool for predicting whether a new patient likely has Acute Lymphoblastic Leukemia or Acute Myeloid Leukemia based only on their genetic expression values.
@@ -328,9 +331,146 @@ The following questions essentially  create a diagnostic tool for predicting whe
 ## (a) (15 points)
 Fit two SVM models with linear and RBF kernels to the training set, and report the classification accuracy of the fitted models on the test set. Explain in words how linear and RBF kernels differ as part of the SVM. In tuning your SVMs, consider some values of `cost` in the range of 1e-5 to 1 for the linear kernel and for the RBF kernel, `cost` in the range of 0.5 to 20  and `gamma` between 1e-6 and 1. Explain what you are seeing. 
 
+### Train a svm with 5 fold cv
+```{r}
+set.seed(109)
+# Set parameters
+costs_lin <- seq(from=1e-5, to=1, by=0.05)
+costs_rbf <- seq(from=0.5, to=20, by=0.75)
+gammas <- seq(from=1e-6, to=1, by=0.05)
 
+# Fit model
+fit_svm_cv_lin <- tune(svm, all.aml ~ .,
+                       data=df_train,
+                       tunecontrol=tune.control(cross=5),
+                       ranges=list(cost=costs_lin,
+                                   kernel='linear'))
 
+fit_svm_cv_rad <- tune(svm, all.aml ~ .,
+                       data=df_train,
+                       tunecontrol=tune.control(cross=5),
+                       ranges=list(cost=costs_rbf, gamma=gammas,
+                                   kernel='radial'))
+```
+
+### Predict accuracy
+```{r}
+# Best SVM
+pred_svm_lin <- predict(fit_svm_cv_lin$best.model, df_test)
+pred_svm_rad <- predict(fit_svm_cv_rad$best.model, df_test)
+
+# Confusion matrix
+cm_svm_lin <- confusionMatrix(table(pred_svm_lin, df_test$all.aml))
+cm_svm_rad <- confusionMatrix(table(pred_svm_rad, df_test$all.aml))
+
+# Output
+pander(cm_svm_lin$table)
+pander(cm_svm_lin$overall)
+pander(cm_svm_rad$table)
+pander(cm_svm_rad$overall)
+```
 
 (b) (10 points) Apply principal component analysis (PCA) to the genetic expression values in the training set, and retain the minimal number of PCs that capture at least 90% of the variance in the data. How does the number of PCs identified compare with the total number of gene expression values?  Apply to the test data the rotation that resulted in the PCs in the training data, and keep the same set of PCs.
+
+
+```{r}
+# Fit the model
+fit_pca <- prcomp(df_train[, 2:length(df_train)], scale=TRUE, center=TRUE)
+
+# Get the amount on variance
+pca_variance <- fit_pca$sdev^2/sum(fit_pca$sdev^2)
+```
+
+### Calculate the pc's retaining 90% of the variation
+```{r}
+top_pca <- min(which(cumsum(pca_variance) >= 0.90))
+print(max(top_pca))
+```
+
+Instead of using 108 Columns only 23 are sufficient in order to retain 90% of the variability in the data. This helps migigating the curse of hyperdimensionality problem in the data.
+
+### Transforming the test and training data
+```{r}
+pca_90_vectors <- fit_pca$rotation[, 1:top_pca]
+
+# Rescale
+df_pca_train <- scale(df_train[, 2:length(df_train)],
+                     center=fit_pca$center,
+                     scale=fit_pca$scale)
+
+df_pca_test <- scale(df_test[, 2:length(df_test)],
+                     center=fit_pca$center,
+                     scale=fit_pca$scale)
+
+df_pca_train <- df_pca_train %*% fit_pca$rotation[, 1:top_pca]
+df_pca_test <- df_pca_test %*% fit_pca$rotation[, 1:top_pca]
+
+# Put together in df
+df_pca_train <- data.frame(all.aml=df_train$all.aml, df_pca_train)
+df_pca_test <- data.frame(all.aml=df_test$all.aml, df_pca_test)
+```
+
+
 (c) (15 points) Fit a SVM model with linear and RBF kernels to the reduced training set, 
 and report the classification accuracy of the fitted models on the reduced test set. Do not forget to tune the regularization and kernel parameters by cross-validation. How does the test accuracies compare with the previous models from part (a)? What does this convey? *Hint*: You may use similar ranges for tuning as in part (a), but for the RBF kernel you may need to try even larger values of `cost`, i.e. in the range of 0.5 to 40. 
+
+```{r}
+# Fit model
+fit_svm_cv_lin_red <- tune(svm, all.aml ~ .,
+                           data=df_pca_train,
+                           tunecontrol=tune.control(cross=5),
+                           ranges=list(cost=costs_lin,
+                                       kernel='linear'))
+
+fit_svm_cv_rad_red <- tune(svm, all.aml ~ .,
+                           data=df_pca_train,
+                           tunecontrol=tune.control(cross=5),
+                           ranges=list(cost=costs_rbf, gamma=gammas,
+                                       kernel='radial'))
+```
+
+### Predict accuracy
+```{r}
+# Best SVM
+pred_svm_lin_red <- predict(fit_svm_cv_lin_red$best.model, df_pca_test)
+pred_svm_rad_red <- predict(fit_svm_cv_rad_red$best.model, df_pca_test)
+
+# Confusion matrix
+cm_svm_lin_red <- confusionMatrix(table(pred_svm_lin_red, df_pca_test$all.aml))
+cm_svm_rad_red <- confusionMatrix(table(pred_svm_rad_red, df_pca_test$all.aml))
+
+# Output
+pander(cm_svm_lin_red$table)
+pander(cm_svm_lin_red$overall)
+pander(cm_svm_rad_red$table)
+pander(cm_svm_rad_red$overall)
+```
+
+### Tune RBF further
+```{r}
+set.seed(109)
+# Set parameters
+costs_rbf2 <- seq(from=0.5, to=40, by=0.75)
+gammas2 <- seq(from=1e-6, to=1, by=0.05)
+
+# Fit model
+fit_svm_cv_rad_red2 <- tune(svm, all.aml ~ .,
+                           data=df_pca_train,
+                           tunecontrol=tune.control(cross=5),
+                           ranges=list(cost=costs_rbf2, gamma=gammas2,
+                                       kernel='radial'))
+```
+
+### Predict accuracy
+```{r}
+# Best SVM
+pred_svm_rad_red2 <- predict(fit_svm_cv_rad_red2$best.model, df_pca_test)
+
+# Confusion matrix
+cm_svm_rad_red2 <- confusionMatrix(table(pred_svm_rad_red2, df_pca_test$all.aml))
+
+# Output
+pander(cm_svm_rad_red2$table)
+pander(cm_svm_rad_red2$overall)
+```
+
