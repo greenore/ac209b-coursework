@@ -182,4 +182,3 @@ ggplot(df_year_perc,
   ylab(label="Percentage") + 
   xlab("Year") +
   theme_bw()
-

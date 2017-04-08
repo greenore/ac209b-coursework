@@ -1,0 +1,336 @@
+---
+title: |
+  | Midterm 2: Clustering & SVM's
+author: "Tim Hagmann"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    css: css/styles.css
+    highlight: tango
+    theme: flatly
+    toc: yes
+    toc_float: yes
+  word_document:
+    toc: yes
+linkcolor: blue
+subtitle: |
+  | Advanced Topics in Data Science II
+  | Harvard University, Spring 2017
+affiliation: Harvard University
+urlcolor: blue
+---
+
+```{r, echo = FALSE}
+set.seed(109) # Set seed for random number generator
+```
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE,
+                      tidy.opts=list(width.cutoff=60), fig.pos='H',
+                      fig.align='center')
+```
+
+# Introduction
+
+In this exam we're asking you to work with measurements of genetic expression for patients with two related forms of cancer: Acute Lymphoblastic Leukemia (ALL) and Acute Myeloid Leukemia (AML). We ask you to perform two general tasks: (1) Cluster the patients based only on their provided genetic expression measurements and (2) classify samples as either ALL or AML using Support Vector Machines.
+
+In the file `MT2_data.csv`, you are provided a data set containing information about a set of 72 different tissue samples. The data have already been split into training and testing when considering the SVM analyses, as the first column indicates. The first 34 samples will be saved for testing while the remaining 38 will be used for training. Columns 2-4 contain the following general information about the sample:
+
+- ALL.AML: Whether the patient had AML or ALL.
+- BM.PB: Whether the sample was taken from bone marrow or from peripheral blood.
+- Gender: The gender of the patient the sample was obtained from.
+
+Note that some of the samples have missing information in these columns. Keep this in mind when conducting some of the analyses below. The remaining columns contain expression measurements for 107 genes. You should treat these as the features. The genes have been pre-selected from a set of about 7000 that are known to be relevant to, and hopefully predictive of, these types of cancers.
+
+# Problem 1: Clustering [60 points]
+
+For the following, **you should use all 72 samples** -- you will only use the genetic information found in columns 5-111 of the dataset. The following questions are about performing cluster analysis of the samples using only genetic data (not columns 2-4). 
+
+
+```{r init, message=FALSE, warning=FALSE}
+## Options
+options(scipen = 10)                          # Disable scientific notation
+update_package <- FALSE                       # Use old status of packages
+
+## Init files (always execute, eta: 10s)
+source("scripts/01_init.R")                   # Helper functions to load packages
+source("scripts/02_packages.R")               # Load all necessary packages
+source("scripts/03_functions.R")              # Load project specific functions
+```
+
+### Load the data
+```{r, message=FALSE}
+## Read data
+df_genes <- data.frame(read_csv("data/MT2_data.csv"))
+
+# Reformat
+names(df_genes) <- tolower(names(df_genes))
+
+# Select
+df_clust <- df_genes[, 5:111]
+```
+
+## (a) (10 points)
+Standardize the gene expression values, and compute the Euclidean distance between each pair of genes. Apply multi-dimensional scaling to the pair-wise distances, and generate a scatter plot of genes in two dimension. By visual inspection, into how many groups do the genes cluster?  If you were to apply principal components analysis to the standardized data and then plot the first two principal components, how do you think the graph would differ? Briefly justify. (you do not need to perform this latter plot)
+
+### Rescaling
+Rescale the data, and compute the Euclidean distance between each pair of states. Generate a heat map of the pair-wise distances.
+
+```{r}
+dist_euclidean <- daisy(df_clust, metric="euclidean", stand=TRUE)
+print("Plot I: Heat map of the pair-wise distances")
+fviz_dist(dist_euclidean,
+          gradient=list(low="black", mid="white", high="darkred"),
+          lab_size=7)
+```
+
+The above plot shows, that there are different Clusters present. 
+
+### Apply MDS
+Apply multi-dimensional scaling to the pair-wise distances, and generate a scatter plot of the genes in two dimension.
+
+### Calculate multi-dimensional scaling (MDS)
+```{r}
+vec_mds <- cmdscale(dist_euclidean)
+colnames(vec_mds) <- c("X1", "X2")
+```
+
+#### Visualize
+```{r warning=FALSE}
+ggplot(data=vec_mds, aes(x=X1, y=X2)) +
+  geom_point() +
+  geom_point(size=0.9) + 
+  geom_density2d(color="darkred") +
+  ggtitle("Plot II: Multi-Dimensional Scaling") +
+  xlim(-14, 15) +
+  ylim(-14, 13) +
+  theme_bw()
+```
+
+The above conture plot shows only one cluster, however a couple of outliers appear to be present in the right part and the bottom part of the plot.
+
+### PCA plot
+I would assume that the 2D dimension plot and the PCA plot would both look similar, but reflected acros 0 on the PC1/Dim1 axis. Thus, MDS and PCA are probably not at the same level to be in line or opposite to each other. 
+
+## (b) (10 points)
+Apply **Partitioning around medoids** (PAM) to the data, selecting the optimal number of clusters based on the Gap, Elbow and Silhouette statistics -- if the they disagree, select the largest number of clusters indicated by the statistics. Summarize the results of clustering using a principal components plot, and comment on the quality of clustering using a Silhouette diagnostic plot.
+
+### Partitioning around medoids (PAM)
+```{r}
+gapstat_pam <- clusGap(scale(df_clust),FUN=pam, K.max=10, B=500)
+```
+
+### Print output
+```{r}
+print(gapstat_pam, method = "Tibs2001SEmax")
+```
+
+The Tibshirani criterion has the idea that for a particular choice of K clusters, the total within cluster variation is compared to the expected within-cluster variation. According to this creterion two clusters is optimal.
+
+### PAM gap statistic
+```{r}
+# Calculation
+nbc_clust_gap <- fviz_nbclust(scale(df_clust), pam,
+                 method="gap_stat", linecolor="darkred",
+                 k.max=10)
+
+# Visualization
+nbc_clust_gap + ggtitle("Plot III: PAM clustering") 
+```
+
+Optimal number of clusters is set at 2.
+
+### PAM silouhette
+```{r}
+# Calculation
+nbc_clust_sil <- fviz_nbclust(scale(df_clust), pam,
+                 method="silhouette", linecolor="darkred",
+                 k.max=10)
+
+# Visualization
+nbc_clust_sil + ggtitle("Plot IV: PAM clustering") 
+```
+
+The above plot indicates a optimal number of clusters at 2. 
+
+### Summary
+The different methods for the pam algorithm do agree on the optimal amount of clusters. The Gap Stat indicates 2 clusters and the silouhette statistic also 2 clusters.
+
+### Calculate
+```{r}
+# Options
+opt_clust <- 2
+sel_pam <- pam(scale(df_clust), opt_clust)
+
+# Calculation
+fviz_clust_pam <- fviz_cluster(sel_pam,
+                               data=scale(df_clust),
+                               linecolor="darkred",
+                               labelsize=8)
+```
+
+### Visualize PAM
+```{r}
+fviz_clust_pam + 
+  ggtitle("Plot V: PC PAM clustering") +
+  theme_bw()
+```
+
+### Missclassified states
+```{r}
+# Calculate
+sil_pam <- silhouette(sel_pam)[, 3]
+
+# Print missclassified genes
+print("PAM misclassified genes:")
+print(names(which(sil_pam < 0)))
+```
+
+### PAM silhouette
+```{r}
+fviz_silhouette(silhouette(sel_pam),
+                main="Plot VI: Silhouette plot for PAM clustering") +
+  theme_bw() +
+  scale_fill_manual(values=c("black", "darkred")) +
+  scale_color_manual(values=c("white", "white")) +
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.25))
+```
+
+The PAM algorithm misslassified the genes 27, 70, 62, 25, 23 and 6 into the wrong clusters.
+
+## (c) (10 points)
+Apply **Agglomerative clustering** (AGNES) with Ward's method to the data. Summarize the results using a dendrogram. Determine the optimal number of clusters in a similar way as in (b), and add rectangles to the dendrograms sectioning off clusters.  Comment on the ways (if any) the results of PAM differ from those of AGNES.
+
+## Agglomerative clustering
+
+```{r}
+gapstat_agnes <- clusGap(scale(df_clust),
+                         FUN=agnes.reformat,
+                         K.max=10, B=500)
+print(gapstat_agnes, method = "Tibs2001SEmax")
+```
+
+According to the Tibshirani metric the optimal amount of clusters is 1. However, in order to visualize a sensible amount of clusters on the dendogram, 2 is chosen. 
+
+## Ward method
+```{r}
+sel_agnes <- agnes(scale(df_clust),
+                   method="ward",
+                   stand=T)
+
+pltree(agnes(df_clust), cex=0.5, hang=-0.01, main="Plot VII: Dendogram of agnes")
+rect.hclust(sel_agnes, k=2, border="darkred")
+```
+
+
+### Calculations
+```{r}
+out_agnes <- as.integer((agnes.reformat(scale(df_clust), 2))[[1]])
+sil_agnes <- silhouette(out_agnes, dist(scale(df_clust)))[, 3]
+index_agnes_neg_sil <- which(sil_agnes < 0)
+print("Agnes Misclassified Genes:")
+print(row.names(df_clust)[index_agnes_neg_sil])
+```
+
+### Visualization
+```{r}
+fviz_silhouette(silhouette(out_agnes, dist(scale(df_clust))),
+                main="Plot VIII: Silhouette plot for AGNES clustering") +
+  theme_bw() +
+  scale_fill_manual(values=c("black", "darkred")) +
+  scale_color_manual(values=c("white", "white")) +
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.25))
+```
+
+The silhouette plot shows that the following genes are missclassified: 2, 3, 21, 23, 25, 27, 38, 41, 42, 43, 61, 62, 63, 66 into cluster 1. 
+
+###### Comment on difference!!!!!
+
+## (d) (10 points)
+Apply **Fuzzy clustering** (FANNY) to the data, determining the optimal number of clusters as in (b). Summarize the results using both a principal components plot, and a correlation plot of the cluster membership weights.  Based on the cluster membership weights, do you think it makes sense to consider summarizing the results using a principal components plot?  Briefly justify.
+
+### Fuzzy Clustering
+### Gap statistics fanny
+```{r, warning=FALSE}
+gapstat_fanny <- clusGap(scale(df_clust),
+                         FUN=fanny,
+                         K.max=10,
+                         B=500)
+print(gapstat_fanny, method = "Tibs2001SEmax")
+```
+
+According to the Tibshirani metric the optimal amount of clusters is 1. However, in order to visualize a sensible amount of clusters on the dendogram, 2 is chosen. 
+
+### Visualization
+```{r}
+sel_fanny <- fanny(df_clust, 2)
+fviz_cluster(sel_fanny,
+             data=scale(df_clust),
+             main="Plot XIX: Fuzzy Clustering",
+             labelsize=8) +
+  theme_bw() +
+  xlim(-5, 5) +
+  ylim(-3, 7)
+```
+
+### Correlation plot for fanny
+```{r}
+corrplot(sel_fanny$membership,
+         is.corr=FALSE,
+         tl.cex=0.5, tl.col="darkred", cl.cex=0.5)
+```
+
+It appears that most states have a high probabilty of beeing in one of the groups. However, states like South and North Carolina as well as Tennesse are more undecided.
+
+### Fanny silhouette plot
+```{r}
+# Calculations
+sil_fanny <- silhouette(sel_fanny)[, 3]
+print("Fuzzy misclassified states:")
+print(names(which(sil_fanny < 0)))
+```
+
+### Visualization
+```{r}
+fviz_silhouette(silhouette(sel_fanny),
+                main="Plot XX: Silhouette plot for fuzzy clustering") +
+  theme_bw() +
+  scale_fill_manual(values=c("black", "darkred")) +
+  scale_color_manual(values=c("white", "white")) +
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0.25))
+```
+
+The above plot shows, that there are 9 missclassified states. Those are: New Hampshire, Colorado, Georgia, South Dakota, Alaska, North Carolina, Montana, Tennessee, New Mexico. This indicates that the clustering has potential to be improved. 
+
+
+(e) (20 points) For the clusters found in parts (b)-(d), select just one of the clusterings, preferably with the largest number of clusters. For this clustering, what proportion of each cluster are ALL (Acute Lympohblastic Leukemia) samples? In each cluster, what proportion are samples belonging to female subjects? In each cluster, what proportion of the samples were taken from bone marrow as opposed to peripheral blood? What, if anything, does this analysis imply about the clusters you discovered?
+
+
+
+# Problem 2: Classification [40 points]
+
+For the following problem, we will not be using the general information about the sample due to missing values. Subset the columns keeping only the ALL.AML and the 107 genetic expression values. Then split the samples into two datasets, one for training and one for testing, according to the indicator in the first column. There should be 38 samples for training and 34 for testing. 
+
+### Data selection
+```{r}
+df_train <- df_genes[df_genes$train.test == "Train", 5:length(df_genes)]
+df_test <- df_genes[df_genes$train.test == "Test", 5:length(df_genes)]
+```
+
+The following questions essentially  create a diagnostic tool for predicting whether a new patient likely has Acute Lymphoblastic Leukemia or Acute Myeloid Leukemia based only on their genetic expression values.
+
+## (a) (15 points)
+Fit two SVM models with linear and RBF kernels to the training set, and report the classification accuracy of the fitted models on the test set. Explain in words how linear and RBF kernels differ as part of the SVM. In tuning your SVMs, consider some values of `cost` in the range of 1e-5 to 1 for the linear kernel and for the RBF kernel, `cost` in the range of 0.5 to 20  and `gamma` between 1e-6 and 1. Explain what you are seeing. 
+
+
+
+
+(b) (10 points) Apply principal component analysis (PCA) to the genetic expression values in the training set, and retain the minimal number of PCs that capture at least 90% of the variance in the data. How does the number of PCs identified compare with the total number of gene expression values?  Apply to the test data the rotation that resulted in the PCs in the training data, and keep the same set of PCs.
+(c) (15 points) Fit a SVM model with linear and RBF kernels to the reduced training set, 
+and report the classification accuracy of the fitted models on the reduced test set. Do not forget to tune the regularization and kernel parameters by cross-validation. How does the test accuracies compare with the previous models from part (a)? What does this convey? *Hint*: You may use similar ranges for tuning as in part (a), but for the RBF kernel you may need to try even larger values of `cost`, i.e. in the range of 0.5 to 40. 
