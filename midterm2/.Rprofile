@@ -1,5 +1,5 @@
 # Change default library path
-#.libPaths("C:/Local/R/win-library/3.2")
+.libPaths("C:/Local/R/win-library/3.2")
 options(repos = c(CRAN = "https://cran.revolutionanalytics.com"))
 
 # Set local time
